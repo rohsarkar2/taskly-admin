@@ -13,8 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { toast } from "sonner";
-import { axiosPublic } from "../axios/Axios";
-import axios from "axios";
+import { getErrorMessage, login } from "@/lib/api/auth";
 import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
 import { setTokens } from "@/lib/redux/slices/authSlice";
 import { setUser } from "@/lib/redux/slices/userSlice";
@@ -47,48 +46,31 @@ export default function SignIn() {
 
     setIsLoading(true);
     try {
-      const payload = {
+      const { message, data } = await login({
         email: formData.email,
         password: formData.password,
-      };
-
-      const response = await axiosPublic.post("/admin/login", payload);
-
-      const { user } = response.data;
+      });
 
       // Store tokens in Redux (which also stores in sessionStorage)
       dispatch(
         setTokens({
-          accessToken: user.accessToken,
-          refreshToken: user.refreshToken,
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
         }),
       );
 
-      // Store user data in Redux
-      dispatch(
-        setUser({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          userType: user.userType,
-          organizationId: user.organizationId,
-          organizationName: user.organizationName,
-          uniqueOrganizationId: user.uniqueOrganizationId,
-        }),
-      );
+      // Store the user whole — the payload carries role, avatar and
+      // designation too, and cherry-picking fields would drop them.
+      dispatch(setUser(data.user));
 
-      toast.success("Logged in successfully!");
+      toast.success(message || "Logged in successfully!");
 
       // Redirect to dashboard
       router.push("/dashboard");
     } catch (error: unknown) {
-      let errorMessage = "Failed to sign in. Please try again.";
-
-      if (axios.isAxiosError(error) && error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      }
-
-      toast.error(errorMessage);
+      toast.error(
+        getErrorMessage(error, "Failed to sign in. Please try again."),
+      );
       console.error("Sign in error:", error);
     } finally {
       setIsLoading(false);
@@ -158,7 +140,7 @@ export default function SignIn() {
               </div>
 
               <Link
-                href="#"
+                href="/forgot-password"
                 className="text-sm font-medium text-[#2d5a4c] hover:text-[#234539]"
               >
                 Forgot password?
@@ -168,6 +150,7 @@ export default function SignIn() {
             <Button
               type="submit"
               className="w-full bg-[#2d5a4c] hover:bg-[#234539]"
+              disabled={isLoading}
             >
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>

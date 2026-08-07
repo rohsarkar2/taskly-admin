@@ -1,24 +1,10 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  userType: string;
-  organizationId: string;
-  organizationName: string;
-  uniqueOrganizationId: string;
-}
-
-interface Organization {
-  id: string;
-  name: string;
-  uniqueOrganizationId: string;
-  organizationSize: string;
-}
+// Type-only import — keeps the API wire types as the single source of truth
+// without pulling the axios instances into the store's import graph.
+import type { AdminUser, Organization } from "@/lib/api/types";
 
 interface UserState {
-  user: User | null;
+  user: AdminUser | null;
   organization: Organization | null;
 }
 
@@ -31,7 +17,7 @@ const userSlice = createSlice({
   name: "user",
   initialState,
   reducers: {
-    setUser: (state, action: PayloadAction<User>) => {
+    setUser: (state, action: PayloadAction<AdminUser>) => {
       state.user = action.payload;
     },
     setOrganization: (state, action: PayloadAction<Organization>) => {

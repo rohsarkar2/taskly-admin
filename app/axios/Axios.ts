@@ -1,6 +1,7 @@
 import axios from "axios";
 import { store } from "@/lib/redux/store";
 import { setTokens, clearTokens } from "@/lib/redux/slices/authSlice";
+import { ADMIN_ENDPOINTS } from "@/lib/api/endpoints";
 
 export const axiosPublic = axios.create({
   baseURL: process.env.NEXT_PUBLIC_TASKLY_BASE_URL || "http://localhost:8080",
@@ -50,13 +51,17 @@ axiosPrivate.interceptors.response.use(
           return Promise.reject(error);
         }
 
-        // Try to refresh the token
-        const response = await axiosPublic.post("/admin/refresh-token", {
-          refreshToken,
-        });
+        // Try to refresh the token. This deliberately stays inline rather than
+        // calling `lib/api/auth.ts` — that module imports these instances, so
+        // reaching back into it here would be a cycle.
+        const response = await axiosPublic.post(
+          ADMIN_ENDPOINTS.REFRESH_TOKEN,
+          { refreshToken },
+        );
 
+        // Responses are enveloped as { success, message, data }.
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
-          response.data;
+          response.data.data;
 
         // Update tokens in Redux and sessionStorage
         store.dispatch(

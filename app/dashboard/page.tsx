@@ -1,6 +1,20 @@
-import { ClipboardList, CheckCircle2, Clock, AlertCircle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+"use client";
+
+import Link from "next/link";
+import {
+  AlertTriangle,
+  ClipboardList,
+  FolderKanban,
+  UserPlus,
+  Users,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -10,239 +24,422 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { HBarChart, StackedBar } from "@/components/charts/bar-chart";
+import { LineChart } from "@/components/charts/line-chart";
+import {
+  AvatarStack,
+  EmployeeStatusBadge,
+  PageHeader,
+  PersonCell,
+  PriorityBadge,
+  ProgressCell,
+  StatGrid,
+  StatTile,
+  TaskStatusBadge,
+} from "@/components/dashboard/ui-bits";
+import {
+  formatDate,
+  isOverdue,
+  monthlyTaskVolume,
+  organizationOverview,
+  organizationSettings,
+  pendingApprovalTasks,
+  pendingEmployees,
+  projectById,
+  projectPerformance,
+  projectNameOf,
+  relativeToToday,
+  tasks,
+  activityLogs,
+} from "@/lib/mock-data";
 
-export default function Dashboard() {
-  const stats = [
-    {
-      name: "Total Tasks",
-      value: "248",
-      change: "+12%",
-      changeType: "increase",
-      icon: ClipboardList,
-      color: "text-blue-500",
-    },
-    {
-      name: "Completed",
-      value: "189",
-      change: "+8%",
-      changeType: "increase",
-      icon: CheckCircle2,
-      color: "text-green-500",
-    },
-    {
-      name: "In Progress",
-      value: "42",
-      change: "+5%",
-      changeType: "increase",
-      icon: Clock,
-      color: "text-yellow-500",
-    },
-    {
-      name: "Overdue",
-      value: "17",
-      change: "-3%",
-      changeType: "decrease",
-      icon: AlertCircle,
-      color: "text-red-500",
-    },
-  ];
+export default function DashboardPage() {
+  const overview = organizationOverview();
+  const projectStats = projectPerformance().filter(
+    (p) => p.status === "Active" || p.status === "On Hold",
+  );
 
-  const recentTasks = [
-    {
-      id: 1,
-      title: "Update user authentication flow",
-      status: "In Progress",
-      priority: "High",
-      assignee: "John Doe",
-      dueDate: "2026-06-05",
-    },
-    {
-      id: 2,
-      title: "Design new dashboard layout",
-      status: "Completed",
-      priority: "Medium",
-      assignee: "Jane Smith",
-      dueDate: "2026-06-03",
-    },
-    {
-      id: 3,
-      title: "Fix responsive issues on mobile",
-      status: "In Progress",
-      priority: "High",
-      assignee: "Mike Johnson",
-      dueDate: "2026-06-04",
-    },
-    {
-      id: 4,
-      title: "Write API documentation",
-      status: "To Do",
-      priority: "Low",
-      assignee: "Sarah Williams",
-      dueDate: "2026-06-10",
-    },
-    {
-      id: 5,
-      title: "Optimize database queries",
-      status: "In Progress",
-      priority: "Medium",
-      assignee: "Alex Brown",
-      dueDate: "2026-06-06",
-    },
-  ];
+  const recentTasks = [...tasks]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 6);
 
-  const getPriorityVariant = (priority: string) => {
-    switch (priority) {
-      case "High":
-        return "destructive" as const;
-      case "Medium":
-        return "secondary" as const;
-      case "Low":
-        return "outline" as const;
-      default:
-        return "ghost" as const;
-    }
-  };
-
-  const getStatusVariant = (status: string) => {
-    switch (status) {
-      case "Completed":
-        return "default" as const;
-      case "In Progress":
-        return "secondary" as const;
-      case "To Do":
-        return "outline" as const;
-      default:
-        return "outline" as const;
-    }
-  };
+  /** Things the admin has to act on before anything else on this page. */
+  const actionItems = [
+    {
+      count: pendingEmployees.length,
+      label: "employees waiting for approval",
+      href: "/dashboard/requests",
+      cta: "Review requests",
+    },
+    {
+      count: pendingApprovalTasks.length,
+      label: "tasks waiting for your decision",
+      href: "/dashboard/approvals",
+      cta: "Open approval center",
+    },
+    {
+      count: overview.overdue,
+      label: "tasks past their due date",
+      href: "/dashboard/tasks?status=overdue",
+      cta: "View overdue tasks",
+    },
+  ].filter((item) => item.count > 0);
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
-          Dashboard
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Welcome back! Here&apos;s an overview of your tasks.
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="Dashboard"
+        description={`${organizationSettings.name} · ${organizationSettings.uniqueOrganizationId}`}
+        action={
+          <>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/dashboard/reports">Generate report</Link>
+            </Button>
+            <Button size="sm" className="bg-[#2d5a4c] hover:bg-[#234539]" asChild>
+              <Link href="/dashboard/projects">New project</Link>
+            </Button>
+          </>
+        }
+      />
 
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={stat.name}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.name}
-                </CardTitle>
-                <Icon className={`h-4 w-4 ${stat.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                {/* <p
-                  className={`text-xs ${
-                    stat.changeType === "increase"
-                      ? "text-green-600"
-                      : "text-red-600"
-                  }`}
-                >
-                  {stat.change} from last month
-                </p> */}
+      {/* Needs attention */}
+      {actionItems.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {actionItems.map((item) => (
+            <Card key={item.href} className="border-l-4 border-l-[#2d5a4c]">
+              <CardContent className="flex items-center justify-between gap-3 py-3">
+                <p className="text-sm">
+                  <span className="text-lg font-bold">{item.count}</span>{" "}
+                  <span className="text-muted-foreground">{item.label}</span>
+                </p>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={item.href}>{item.cta} →</Link>
+                </Button>
               </CardContent>
             </Card>
-          );
-        })}
+          ))}
+        </div>
+      )}
+
+      {/* Headline numbers */}
+      <StatGrid>
+        <StatTile
+          label="Total Employees"
+          value={overview.totalEmployees}
+          hint={`${overview.activeEmployees} active · ${overview.pendingEmployees} pending`}
+          icon={Users}
+          href="/dashboard/employees"
+        />
+        <StatTile
+          label="Projects"
+          value={overview.totalProjects}
+          hint={`${overview.activeProjects} active · ${overview.completedProjects} completed`}
+          icon={FolderKanban}
+          accent="var(--viz-3)"
+          href="/dashboard/projects"
+        />
+        <StatTile
+          label="Total Tasks"
+          value={overview.totalTasks}
+          hint={`${overview.completed} completed · ${overview.inProgress} in progress`}
+          icon={ClipboardList}
+          accent="var(--viz-2)"
+          href="/dashboard/tasks"
+        />
+        <StatTile
+          label="Overdue Tasks"
+          value={overview.overdue}
+          hint={`${overview.blocked} blocked · ${overview.pendingApproval} awaiting approval`}
+          icon={AlertTriangle}
+          accent="var(--viz-critical)"
+          href="/dashboard/tasks?status=overdue"
+        />
+      </StatGrid>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Organization overview */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Organization overview</CardTitle>
+            <CardDescription>
+              Headcount by role across {overview.activeEmployees} active
+              employees.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <HBarChart
+              tableColumns={["Role", "People"]}
+              data={[
+                { label: "Team Members", value: overview.teamMembers },
+                { label: "Team Leads", value: overview.teamLeads },
+                { label: "Managers", value: overview.managers },
+              ]}
+            />
+          </CardContent>
+        </Card>
+
+        {/* Task status distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Task status distribution</CardTitle>
+            <CardDescription>
+              All {overview.totalTasks} tasks in the organization.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <StackedBar
+              segments={[
+                { label: "To Do", value: overview.todo },
+                { label: "In Progress", value: overview.inProgress },
+                { label: "Pending Approval", value: overview.pendingApproval },
+                { label: "Blocked", value: overview.blocked },
+                { label: "Completed", value: overview.completed },
+                { label: "Rejected", value: overview.rejected },
+              ]}
+            />
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Recent Tasks */}
+      {/* Monthly trend */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Tasks created vs completed</CardTitle>
+          <CardDescription>
+            Monthly volume for 2026. August is still in progress.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <LineChart
+            categories={monthlyTaskVolume.map((m) => m.month)}
+            series={[
+              {
+                label: "Created",
+                values: monthlyTaskVolume.map((m) => m.created),
+              },
+              {
+                label: "Completed",
+                values: monthlyTaskVolume.map((m) => m.completed),
+              },
+            ]}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Project progress */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Recent Tasks</CardTitle>
-            <Button variant="ghost" size="sm">
-              View All
+            <div>
+              <CardTitle>Project progress</CardTitle>
+              <CardDescription>
+                Completion across projects that are still running.
+              </CardDescription>
+            </div>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/dashboard/projects">View all</Link>
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="font-bold">Task</TableHead>
-                <TableHead className="font-bold">Status</TableHead>
-                <TableHead className="font-bold">Priority</TableHead>
-                <TableHead className="font-bold">Assignee</TableHead>
-                <TableHead className="font-bold text-right">Due Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentTasks.map((task) => (
-                <TableRow key={task.id}>
-                  <TableCell className="font-medium">{task.title}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={getStatusVariant(task.status)}
-                      className="text-xs"
-                    >
-                      {task.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={getPriorityVariant(task.priority)}
-                      className="text-xs"
-                    >
-                      {task.priority}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{task.assignee}</span>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {new Date(task.dueDate).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Progress</TableHead>
+                  <TableHead className="text-right">Completed</TableHead>
+                  <TableHead className="text-right">Pending</TableHead>
+                  <TableHead className="text-right">Overdue</TableHead>
+                  <TableHead className="text-right">Deadline</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {projectStats.map((project) => (
+                  <TableRow key={project.projectId}>
+                    <TableCell>
+                      <Link
+                        href={`/dashboard/projects/${project.projectId}`}
+                        className="font-medium hover:underline"
+                      >
+                        {project.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <ProgressCell value={project.completionRate} />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {project.completed}/{project.total}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {project.pending}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {project.overdue}
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">
+                      {relativeToToday(
+                        projectById(project.projectId)!.deadline,
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Quick Actions */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="bg-[#2d5a4c] text-white border-[#2d5a4c]">
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Recent tasks */}
+        <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Create New Task</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Recent tasks</CardTitle>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/dashboard/tasks">View all</Link>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-white/80 mb-4">
-              Quickly add a new task to your workflow
-            </p>
-            <Button variant="secondary" size="sm">
-              + New Task
-            </Button>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Task</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Assignee</TableHead>
+                    <TableHead className="text-right">Due</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentTasks.map((task) => (
+                    <TableRow key={task.id}>
+                      <TableCell className="max-w-[16rem]">
+                        <Link
+                          href={`/dashboard/tasks/${task.id}`}
+                          className="block truncate font-medium hover:underline"
+                        >
+                          {task.title}
+                        </Link>
+                        <span className="text-xs text-muted-foreground">
+                          {projectNameOf(task.projectId)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <TaskStatusBadge
+                          status={task.status}
+                          overdue={isOverdue(task)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <PriorityBadge priority={task.priority} />
+                      </TableCell>
+                      <TableCell>
+                        <PersonCell
+                          employeeId={task.assigneeId}
+                          href={`/dashboard/employees/${task.assigneeId}`}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right text-xs whitespace-nowrap">
+                        {formatDate(task.dueDate)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
-        <Card className="bg-[#2d5a4c]/80 text-white border-[#2d5a4c]">
-          <CardHeader>
-            <CardTitle>Generate Report</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-white/80 mb-4">
-              Export your team&apos;s progress and analytics
-            </p>
-            <Button variant="secondary" size="sm">
-              Export Report
-            </Button>
-          </CardContent>
-        </Card>
+
+        {/* Pending registrations + activity */}
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <UserPlus className="size-4" />
+                  Pending requests
+                </CardTitle>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/dashboard/requests">Review</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {pendingEmployees.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No pending registrations.
+                </p>
+              )}
+              {pendingEmployees.slice(0, 4).map((employee) => (
+                <div
+                  key={employee.id}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <PersonCell
+                    employeeId={employee.id}
+                    subtitle={`Registered ${relativeToToday(employee.registeredAt)}`}
+                  />
+                  <EmployeeStatusBadge status={employee.status} />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Recent activity</CardTitle>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/dashboard/activity">All</Link>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-3">
+                {activityLogs.slice(0, 6).map((log) => (
+                  <li key={log.id} className="text-xs">
+                    <span className="font-medium">{log.actor}</span>{" "}
+                    <span className="text-muted-foreground">{log.message}</span>
+                    <span className="block text-[0.65rem] text-muted-foreground">
+                      {formatDate(log.at)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
+
+      {/* Team on active projects */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Teams on active projects</CardTitle>
+          <CardDescription>
+            Only assigned members can open a project from the mobile app.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {projectStats.map((project) => (
+            <Link
+              key={project.projectId}
+              href={`/dashboard/projects/${project.projectId}`}
+              className="rounded-lg border p-3 transition-colors hover:border-foreground/20"
+            >
+              <p className="text-sm font-medium">{project.name}</p>
+              <p className="mb-2 text-xs text-muted-foreground">
+                {project.members} members · {project.pending} open tasks
+              </p>
+              <AvatarStack
+                employeeIds={projectById(project.projectId)?.memberIds ?? []}
+              />
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
+    </>
   );
 }

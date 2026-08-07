@@ -129,3 +129,47 @@
     font-size: 18px;
   }
 }
+
+/* --------------------------------------------------------------------------
+ * Data-visualization tokens.
+ *
+ * Categorical slots are assigned in fixed order and never cycled. Both columns
+ * were run through the palette validator against this app's actual chart
+ * surface (white in light mode, --card in dark): all checks pass, with three
+ * light-mode slots under 3:1 contrast — which is why every chart here ships
+ * direct labels and a table view rather than relying on the fill alone.
+ * -------------------------------------------------------------------------- */
+:root {
+  --viz-surface: #ffffff;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-track: #f0efec;
+  --viz-muted-ink: #52514e;
+
+  --viz-1: #2a78d6; /* blue */
+  --viz-2: #eb6834; /* orange */
+  --viz-3: #1baf7a; /* aqua */
+  --viz-4: #eda100; /* yellow */
+  --viz-5: #e87ba4; /* magenta */
+  --viz-6: #4a3aa7; /* violet */
+
+  --viz-good: #0ca30c;
+  --viz-warning: #fab219;
+  --viz-serious: #ec835a;
+  --viz-critical: #d03b3b;
+}
+
+.dark {
+  --viz-surface: #1a1a19;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-track: #2c2c2a;
+  --viz-muted-ink: #c3c2b7;
+
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #9085e9;
+}

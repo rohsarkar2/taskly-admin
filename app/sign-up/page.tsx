@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import axios from "axios";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,13 +20,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { axiosPublic } from "../axios/Axios";
-import { useAppSelector } from "@/lib/redux/hooks";
+import { getErrorMessage, registerOrganization } from "@/lib/api/auth";
+import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
+import { setTokens } from "@/lib/redux/slices/authSlice";
+import { setUser } from "@/lib/redux/slices/userSlice";
+
+/** Set once registration succeeds, so we can reveal the organization ID. */
+interface CreatedOrganization {
+  organizationId: string | null;
+  signedIn: boolean;
+}
 
 export default function SignUp() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const [isLoading, setIsLoading] = useState(false);
+  const [created, setCreated] = useState<CreatedOrganization | null>(null);
   const [formData, setFormData] = useState({
     organizationName: "",
     adminFullName: "",
@@ -63,36 +72,111 @@ export default function SignUp() {
     setIsLoading(true);
 
     try {
-      const payload = {
+      const { message, data } = await registerOrganization({
         organizationName: formData.organizationName,
         name: formData.adminFullName,
         email: formData.workEmail,
         password: formData.password,
         phoneNumber: formData.phoneNumber || undefined,
         organizationSize: formData.organizationSize || undefined,
-      };
+      });
 
-      await axiosPublic.post("/admin/register", payload);
+      toast.success(message || "Organization created successfully!");
 
-      toast.success("Organization created successfully!");
-
-      // Redirect to sign-in page
-      setTimeout(() => {
-        router.push("/sign-in");
-      }, 1000);
-    } catch (error: unknown) {
-      let errorMessage = "Failed to create organization. Please try again.";
-
-      if (axios.isAxiosError(error) && error.response?.data?.message) {
-        errorMessage = error.response.data.message;
+      // Registration signs the admin in, so store the session straight away.
+      // Guarded because the success card still works without tokens — it just
+      // routes to sign-in instead of the dashboard.
+      if (data?.accessToken && data?.refreshToken) {
+        dispatch(
+          setTokens({
+            accessToken: data.accessToken,
+            refreshToken: data.refreshToken,
+          }),
+        );
+        dispatch(setUser(data.user));
       }
 
-      toast.error(errorMessage);
+      // Show the generated organization ID before moving on — employees need
+      // it to register from the mobile app.
+      setCreated({
+        organizationId: data?.user?.uniqueOrganizationId ?? null,
+        signedIn: Boolean(data?.accessToken),
+      });
+    } catch (error: unknown) {
+      toast.error(
+        getErrorMessage(
+          error,
+          "Failed to create organization. Please try again.",
+        ),
+      );
       console.error("Registration error:", error);
     } finally {
       setIsLoading(false);
     }
   };
+
+  const copyOrganizationId = async () => {
+    if (!created?.organizationId) return;
+    try {
+      await navigator.clipboard.writeText(created.organizationId);
+      toast.success("Organization ID copied");
+    } catch {
+      toast.error("Could not copy the organization ID");
+    }
+  };
+
+  // Registration succeeded — hand over the organization ID before anything else.
+  if (created) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white px-4 py-8">
+        <Card className="w-full max-w-md">
+          <CardHeader className="space-y-1 text-center">
+            <CardTitle className="text-3xl font-bold tracking-tight">
+              {formData.organizationName} is ready
+            </CardTitle>
+            <CardDescription>
+              Share the organization ID with your employees so they can register
+              from the Taskly app.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border p-4 text-center">
+              <p className="text-xs text-muted-foreground">Organization ID</p>
+              <p className="mt-1 font-mono text-2xl font-bold tracking-wider">
+                {created.organizationId ?? "Check your email"}
+              </p>
+            </div>
+
+            {created.organizationId && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={copyOrganizationId}
+              >
+                Copy organization ID
+              </Button>
+            )}
+
+            <ol className="space-y-1.5 rounded-lg border p-3 text-xs text-muted-foreground">
+              <li>1. Employees install the Taskly app and register with this ID.</li>
+              <li>2. Their request lands in Employee Requests as Pending.</li>
+              <li>3. You approve them and pick their role.</li>
+              <li>4. They get access to the projects you assign them to.</li>
+            </ol>
+
+            <Button
+              className="w-full bg-[#2d5a4c] hover:bg-[#234539]"
+              onClick={() =>
+                router.push(created.signedIn ? "/dashboard" : "/sign-in")
+              }
+            >
+              {created.signedIn ? "Go to dashboard" : "Sign in to continue"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white px-4 py-8">
