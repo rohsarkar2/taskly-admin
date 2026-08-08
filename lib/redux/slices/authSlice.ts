@@ -4,12 +4,21 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
+  /**
+   * Whether the session has been read back from `sessionStorage` yet.
+   *
+   * Without this, `isAuthenticated: false` is ambiguous — it means both "signed
+   * out" and "not checked yet" — and guards bounce signed-in users off deep
+   * links on reload, before the restore effect has run.
+   */
+  isRestored: boolean;
 }
 
 const initialState: AuthState = {
   accessToken: null,
   refreshToken: null,
   isAuthenticated: false,
+  isRestored: false,
 };
 
 const authSlice = createSlice({
@@ -34,6 +43,7 @@ const authSlice = createSlice({
       state.accessToken = null;
       state.refreshToken = null;
       state.isAuthenticated = false;
+      state.isRestored = true;
 
       // Clear from sessionStorage
       if (typeof window !== "undefined") {
@@ -53,6 +63,9 @@ const authSlice = createSlice({
           state.isAuthenticated = true;
         }
       }
+
+      // Set even when nothing was stored: the check itself is what finished.
+      state.isRestored = true;
     },
   },
 });

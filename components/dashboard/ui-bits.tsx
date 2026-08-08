@@ -147,7 +147,7 @@ export function StatTile({
     <Card
       className={cn(href && "transition-colors hover:border-foreground/20")}
     >
-      <CardContent className="flex items-start justify-between gap-3 py-4">
+      <CardContent className="flex items-start justify-between gap-3 pt-1 pb-3">
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-muted-foreground">
             {label}
@@ -212,6 +212,7 @@ const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
   "To Do": "var(--viz-axis)",
   "In Progress": "var(--viz-1)",
   "Pending Approval": "var(--viz-warning)",
+  Returned: "var(--viz-2)",
   Blocked: "var(--viz-serious)",
   Completed: "var(--viz-good)",
   Rejected: "var(--viz-critical)",
@@ -245,6 +246,7 @@ const EMPLOYEE_STATUS_COLOR: Record<EmployeeStatus, string> = {
   Pending: "var(--viz-warning)",
   Suspended: "var(--viz-serious)",
   Rejected: "var(--viz-critical)",
+  Removed: "var(--viz-axis)",
 };
 
 export function EmployeeStatusBadge({ status }: { status: EmployeeStatus }) {

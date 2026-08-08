@@ -34,9 +34,19 @@ import {
   StatTile,
   TaskStatusBadge,
 } from "@/components/dashboard/ui-bits";
-import { toEmployee } from "@/lib/api/adapters";
-import { getEmployee } from "@/lib/api/employees";
-import type { EmployeeProjectSummary, EmployeeStats } from "@/lib/api/types";
+import {
+  toEmployee,
+  toEmployeeStats,
+  toPriority,
+  toTaskStatus,
+} from "@/lib/api/adapters";
+import {
+  getEmployee,
+  getEmployeeProjects,
+  getEmployeeStats,
+  getEmployeeTasks,
+} from "@/lib/api/employees";
+import type { ApiEmployeeProject, EmployeeStats } from "@/lib/api/types";
 import {
   employeeById,
   formatDate,
@@ -48,7 +58,6 @@ import {
   tasks as seedTasks,
 } from "@/lib/mock-data";
 import {
-  PRIORITIES,
   TASK_STATUSES,
   type Employee,
   type Priority,
@@ -76,7 +85,7 @@ export default function EmployeeProfilePage({
 
   const [employee, setEmployee] = React.useState<Employee | null>(null);
   const [stats, setStats] = React.useState<EmployeeStats | null>(null);
-  const [projects, setProjects] = React.useState<EmployeeProjectSummary[]>([]);
+  const [projects, setProjects] = React.useState<ApiEmployeeProject[]>([]);
   const [tasks, setTasks] = React.useState<DetailTask[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [usingSampleData, setUsingSampleData] = React.useState(false);
@@ -90,15 +99,43 @@ export default function EmployeeProfilePage({
 
     const load = async () => {
       try {
-        const { data } = await getEmployee(id);
+        // `GET /employees/:id` returns only a light `summary`, so the richer
+        // numbers, the project list and the task list each have their own
+        // endpoint. Failures on the satellites are tolerated — the profile
+        // still renders from whatever resolved.
+        const [detail, stats, projects, tasks] = await Promise.all([
+          getEmployee(id),
+          getEmployeeStats(id).catch(() => null),
+          getEmployeeProjects(id).catch(() => null),
+          getEmployeeTasks(id, { limit: 100 }).catch(() => null),
+        ]);
         if (cancelled) return;
 
-        setEmployee(toEmployee(data.employee));
-        setStats(data.stats ?? null);
-        setProjects(data.projects ?? []);
+        setEmployee(toEmployee(detail.data.employee));
+        setProjects(projects?.data.projects ?? []);
         setTasks(
-          (data.tasks ?? []).map(toDetailTask).filter(Boolean) as DetailTask[],
+          (tasks?.items ?? []).map(toDetailTask).filter(Boolean) as DetailTask[],
         );
+
+        if (stats?.data.stats) {
+          setStats(toEmployeeStats(stats.data.stats));
+        } else if (detail.data.summary) {
+          // Fall back to the inline summary when /stats is unavailable.
+          const summary = detail.data.summary;
+          const byStatus = summary.tasksByStatus ?? {};
+          const total = summary.totalTasks ?? 0;
+          const completed = byStatus.completed ?? 0;
+          setStats({
+            assigned: total,
+            completed,
+            pending: Math.max(0, total - completed),
+            overdue: 0,
+            completionRate: total ? Math.round((completed / total) * 100) : 0,
+          });
+        } else {
+          setStats(null);
+        }
+
         setUsingSampleData(false);
         setNotFound(false);
       } catch (error) {
@@ -305,17 +342,17 @@ export default function EmployeeProfilePage({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {projects.map((project) => (
                 <Link
-                  key={project.id}
-                  href={`/dashboard/projects/${project.id}`}
+                  key={project._id ?? project.id}
+                  href={`/dashboard/projects/${project._id ?? project.id}`}
                   className="rounded-lg border p-3 transition-colors hover:border-foreground/20"
                 >
                   <p className="mb-1 truncate text-sm font-medium">
                     {project.name}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {project.roleInProject ?? "Member"}
-                    {project.deadline &&
-                      ` · deadline ${formatDate(project.deadline)}`}
+                    {project.projectRole ?? "Member"}
+                    {project.endDate &&
+                      ` · ends ${formatDate(project.endDate.slice(0, 10))}`}
                   </p>
                 </Link>
               ))}
@@ -406,12 +443,17 @@ function ProfileSkeleton() {
 function toDetailTask(raw: unknown): DetailTask | null {
   if (!raw || typeof raw !== "object") return null;
   const task = raw as Record<string, unknown>;
-  const id = typeof task.id === "string" ? task.id : null;
+  // Mongo documents use `_id`.
+  const id =
+    typeof task._id === "string"
+      ? task._id
+      : typeof task.id === "string"
+        ? task.id
+        : null;
   if (!id) return null;
 
-  const status = TASK_STATUSES.find((value) => value === task.status);
-  const priority = PRIORITIES.find((value) => value === task.priority);
-  const dueDate = typeof task.dueDate === "string" ? task.dueDate.slice(0, 10) : null;
+  const dueDate =
+    typeof task.dueDate === "string" ? task.dueDate.slice(0, 10) : null;
 
   const projectName =
     typeof task.projectName === "string"
@@ -424,8 +466,12 @@ function toDetailTask(raw: unknown): DetailTask | null {
     id,
     title: typeof task.title === "string" ? task.title : "Untitled task",
     projectName,
-    status: status ?? "To Do",
-    priority: priority ?? "Medium",
+    status: toTaskStatus(
+      typeof task.status === "string" ? task.status : undefined,
+    ),
+    priority: toPriority(
+      typeof task.priority === "string" ? task.priority : undefined,
+    ),
     dueDate,
     overdue: typeof task.isOverdue === "boolean" ? task.isOverdue : false,
   };
@@ -459,18 +505,21 @@ function deriveStats(tasks: DetailTask[]): EmployeeStats {
 
 /* Fixture fallbacks -------------------------------------------------------- */
 
-function seededProjectsFor(employee: Employee): EmployeeProjectSummary[] {
+function seededProjectsFor(employee: Employee): ApiEmployeeProject[] {
   return employee.projectIds.flatMap((projectId) => {
     const project = projectById(projectId);
     if (!project) return [];
 
+    // Field names match the API so the fallback renders through the same JSX.
     return [
       {
         id: project.id,
         name: project.name,
+        code: project.code,
         status: project.status,
-        deadline: project.deadline,
-        roleInProject: project.managerIds.includes(employee.id)
+        priority: project.priority,
+        endDate: project.deadline,
+        projectRole: project.managerIds.includes(employee.id)
           ? "Manager"
           : project.leadIds.includes(employee.id)
             ? "Team Lead"

@@ -41,8 +41,10 @@ export function HBarChart({
   return (
     <div className={className}>
       <ul className="space-y-3">
-        {data.map((d) => (
-          <li key={d.label} className="group">
+        {/* Keyed by position: labels are runtime data (employee and project
+            names) and can legitimately repeat. */}
+        {data.map((d, index) => (
+          <li key={index} className="group">
             <div className="mb-1 flex items-baseline justify-between gap-3">
               <span className="truncate text-xs font-medium" title={d.label}>
                 {d.label}
@@ -114,14 +116,14 @@ export function GroupedBarChart({
       <Legend series={series} className="mb-4" />
 
       <ul className="space-y-3.5">
-        {rows.map((row) => (
-          <li key={row.label}>
+        {rows.map((row, index) => (
+          <li key={index}>
             <p className="mb-1 truncate text-xs font-medium" title={row.label}>
               {row.label}
             </p>
             <div className="space-y-1">
               {row.values.map((value, i) => (
-                <div key={series[i].label} className="flex items-center gap-2">
+                <div key={i} className="flex items-center gap-2">
                   <div
                     className="h-2 flex-1 overflow-hidden rounded-full"
                     style={{ background: "var(--viz-track)" }}
@@ -195,9 +197,9 @@ export function StackedBar({
           .map((s) => `${s.label}: ${s.value}`)
           .join(", ")}
       >
-        {withColor.map((s) => (
+        {withColor.map((s, index) => (
           <div
-            key={s.label}
+            key={index}
             className="h-full first:rounded-l-full last:rounded-r-full transition-[width] duration-500"
             style={{
               width: `${(s.value / total) * 100}%`,
@@ -209,8 +211,8 @@ export function StackedBar({
 
       {showLegend && (
         <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
-          {withColor.map((s) => (
-            <li key={s.label} className="flex items-center gap-1.5 text-xs">
+          {withColor.map((s, index) => (
+            <li key={index} className="flex items-center gap-1.5 text-xs">
               <span
                 aria-hidden
                 className="size-2.5 shrink-0 rounded-[3px]"

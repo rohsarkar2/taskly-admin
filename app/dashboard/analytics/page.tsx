@@ -24,38 +24,122 @@ import {
   StackedBar,
 } from "@/components/charts/bar-chart";
 import { LineChart } from "@/components/charts/line-chart";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
+  EmptyState,
   PageHeader,
   ProgressCell,
-  ProjectStatusBadge,
-  RoleBadge,
+  SampleDataNotice,
   StatGrid,
   StatTile,
 } from "@/components/dashboard/ui-bits";
 import {
-  employeeProductivity,
-  monthlyTaskVolume,
-  organizationOverview,
-  projectPerformance,
-  teamPerformance,
-} from "@/lib/mock-data";
+  getAnalyticsOverview,
+  getEmployeeAnalytics,
+  getProjectAnalytics,
+  getTaskAnalytics,
+  getTeamAnalytics,
+} from "@/lib/api/analytics";
+import type {
+  AnalyticsOverviewData,
+  EmployeeAnalyticsRow,
+  ProjectAnalyticsRow,
+  TeamAnalyticsRow,
+  TrendPoint,
+} from "@/lib/api/analytics";
+import { formatDate, formatShortDate } from "@/lib/mock-data";
+
+/** How many days of trend to request. The server caps this at 180. */
+const TREND_DAYS = 30;
 
 export default function AnalyticsPage() {
-  const overview = organizationOverview();
-  const productivity = employeeProductivity();
-  const teams = teamPerformance();
-  const projectStats = projectPerformance();
-
-  const completionRate = overview.totalTasks
-    ? Math.round((overview.completed / overview.totalTasks) * 100)
-    : 0;
-
-  /** Top performers, capped so the chart stays readable. */
-  const topPerformers = productivity.slice(0, 8);
-
-  const rankedProjects = [...projectStats].sort(
-    (a, b) => b.completionRate - a.completionRate,
+  const [overview, setOverview] = React.useState<AnalyticsOverviewData | null>(
+    null,
   );
+  const [projectRows, setProjectRows] = React.useState<ProjectAnalyticsRow[]>(
+    [],
+  );
+  const [employeeRows, setEmployeeRows] = React.useState<EmployeeAnalyticsRow[]>(
+    [],
+  );
+  const [teams, setTeams] = React.useState<TeamAnalyticsRow[]>([]);
+  const [trend, setTrend] = React.useState<TrendPoint[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [unavailable, setUnavailable] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
+
+  React.useEffect(() => {
+    const signal = { cancelled: false };
+
+    const load = async () => {
+      try {
+        // The overview is the only required call — the rest fill in their own
+        // tab, so one failing endpoint leaves the others readable.
+        const [head, projects, employees, teamRows, tasks] = await Promise.all([
+          getAnalyticsOverview(),
+          getProjectAnalytics({ limit: 100 }).catch(() => null),
+          getEmployeeAnalytics({ limit: 100 }).catch(() => null),
+          getTeamAnalytics().catch(() => null),
+          getTaskAnalytics({ days: TREND_DAYS }).catch(() => null),
+        ]);
+        if (signal.cancelled) return;
+
+        setOverview(head.data);
+        setProjectRows(projects?.data.projects ?? []);
+        setEmployeeRows(employees?.data.employees ?? []);
+        setTeams(teamRows?.data.teams ?? []);
+        setTrend(tasks?.data.trend ?? []);
+        setUnavailable(false);
+      } catch (error) {
+        if (signal.cancelled) return;
+        console.error("Failed to load analytics:", error);
+        setUnavailable(true);
+      } finally {
+        if (!signal.cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const refresh = () => {
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
+
+  if (loading) return <AnalyticsSkeleton />;
+
+  if (unavailable || !overview) {
+    return (
+      <>
+        <PageHeader
+          title="Analytics"
+          description="Productivity and delivery across the whole organization."
+        />
+        <SampleDataNotice
+          message="Could not reach the analytics API."
+          onRetry={refresh}
+        />
+        <EmptyState
+          title="Analytics are unavailable"
+          description="The figures come straight from the server, so there is nothing to show until it responds."
+        />
+      </>
+    );
+  }
+
+  const { employees: employeeCounts, projects: projectCounts, tasks } = overview;
+
+  const openWork = tasks.pending + tasks.inProgress + tasks.pendingApproval;
+  const rankedProjects = [...projectRows].sort(
+    (a, b) => b.completionPercentage - a.completionPercentage,
+  );
+  const topPerformers = [...employeeRows]
+    .sort((a, b) => b.completedTasks - a.completedTasks)
+    .slice(0, 8);
 
   return (
     <>
@@ -67,27 +151,25 @@ export default function AnalyticsPage() {
       <StatGrid>
         <StatTile
           label="Completion Rate"
-          value={`${completionRate}%`}
-          hint={`${overview.completed} of ${overview.totalTasks} tasks`}
+          value={`${Math.round(tasks.completionRate)}%`}
+          hint={`${tasks.completed} of ${tasks.totalTasks} tasks`}
         />
         <StatTile
           label="Open Work"
-          value={
-            overview.todo + overview.inProgress + overview.pendingApproval
-          }
-          hint={`${overview.blocked} blocked`}
+          value={openWork}
+          hint={`${tasks.blocked} blocked · ${tasks.returned} returned`}
           accent="var(--viz-2)"
         />
         <StatTile
           label="Overdue"
-          value={overview.overdue}
+          value={tasks.overdue}
           hint="Past due and not closed"
           accent="var(--viz-critical)"
         />
         <StatTile
           label="Active Employees"
-          value={overview.activeEmployees}
-          hint={`${overview.managers} managers · ${overview.teamLeads} leads`}
+          value={employeeCounts.activeEmployees}
+          hint={`${employeeCounts.managers} managers · ${employeeCounts.teamLeads} leads`}
           accent="var(--viz-3)"
         />
       </StatGrid>
@@ -104,26 +186,27 @@ export default function AnalyticsPage() {
         <TabsContent value="organization" className="mt-4 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Monthly task completion</CardTitle>
+              <CardTitle>Tasks created vs completed</CardTitle>
               <CardDescription>
-                Created against completed, month by month. The gap is the
+                Daily volume over the last {TREND_DAYS} days. The gap is the
                 backlog the organization is carrying.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <LineChart
-                categories={monthlyTaskVolume.map((m) => m.month)}
-                series={[
-                  {
-                    label: "Created",
-                    values: monthlyTaskVolume.map((m) => m.created),
-                  },
-                  {
-                    label: "Completed",
-                    values: monthlyTaskVolume.map((m) => m.completed),
-                  },
-                ]}
-              />
+              {trend.length === 0 ? (
+                <EmptyState title="No trend data for this period" />
+              ) : (
+                <LineChart
+                  categories={trend.map((p) => formatShortDate(p.date))}
+                  series={[
+                    { label: "Created", values: trend.map((p) => p.created) },
+                    {
+                      label: "Completed",
+                      values: trend.map((p) => p.completed),
+                    },
+                  ]}
+                />
+              )}
             </CardContent>
           </Card>
 
@@ -132,22 +215,19 @@ export default function AnalyticsPage() {
               <CardHeader>
                 <CardTitle>Task status distribution</CardTitle>
                 <CardDescription>
-                  Where the organization&apos;s {overview.totalTasks} tasks sit
+                  Where the organization&apos;s {tasks.totalTasks} tasks sit
                   right now.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <StackedBar
                   segments={[
-                    { label: "To Do", value: overview.todo },
-                    { label: "In Progress", value: overview.inProgress },
-                    {
-                      label: "Pending Approval",
-                      value: overview.pendingApproval,
-                    },
-                    { label: "Blocked", value: overview.blocked },
-                    { label: "Completed", value: overview.completed },
-                    { label: "Rejected", value: overview.rejected },
+                    { label: "To Do", value: tasks.pending },
+                    { label: "In Progress", value: tasks.inProgress },
+                    { label: "Pending Approval", value: tasks.pendingApproval },
+                    { label: "Returned", value: tasks.returned },
+                    { label: "Blocked", value: tasks.blocked },
+                    { label: "Completed", value: tasks.completed },
                   ]}
                 />
               </CardContent>
@@ -155,26 +235,62 @@ export default function AnalyticsPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Pending vs completed</CardTitle>
+                <CardTitle>Tasks by priority</CardTitle>
                 <CardDescription>
-                  Open work compared with delivered work.
+                  How the open and closed work is weighted.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <HBarChart
-                  tableColumns={["Bucket", "Tasks"]}
+                  tableColumns={["Priority", "Tasks"]}
+                  data={["urgent", "high", "medium", "low"].map((key) => ({
+                    label: key[0].toUpperCase() + key.slice(1),
+                    value: tasks.byPriority?.[key] ?? 0,
+                  }))}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Headcount by role</CardTitle>
+                <CardDescription>
+                  {employeeCounts.activeEmployees} active of{" "}
+                  {employeeCounts.totalEmployees} employees.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <HBarChart
+                  tableColumns={["Role", "People"]}
                   data={[
-                    { label: "Completed", value: overview.completed },
+                    { label: "Team Members", value: employeeCounts.teamMembers },
+                    { label: "Team Leads", value: employeeCounts.teamLeads },
+                    { label: "Managers", value: employeeCounts.managers },
+                  ]}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Projects by status</CardTitle>
+                <CardDescription>
+                  {projectCounts.totalProjects} projects in the organization.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <HBarChart
+                  tableColumns={["Status", "Projects"]}
+                  data={[
+                    { label: "Active", value: projectCounts.activeProjects },
+                    { label: "On Hold", value: projectCounts.onHoldProjects },
                     {
-                      label: "Pending",
-                      value:
-                        overview.todo +
-                        overview.inProgress +
-                        overview.pendingApproval +
-                        overview.blocked,
+                      label: "Completed",
+                      value: projectCounts.completedProjects,
                     },
-                    { label: "Overdue", value: overview.overdue },
-                    { label: "Rejected", value: overview.rejected },
+                    { label: "Archived", value: projectCounts.archivedProjects },
                   ]}
                 />
               </CardContent>
@@ -184,276 +300,303 @@ export default function AnalyticsPage() {
 
         {/* Employees ------------------------------------------------------- */}
         <TabsContent value="employees" className="mt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Employee productivity</CardTitle>
-              <CardDescription>
-                Completed against still-open tasks for the eight busiest
-                employees.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <GroupedBarChart
-                seriesLabels={["Completed", "Pending"]}
-                rows={topPerformers.map((p) => ({
-                  label: p.name,
-                  values: [p.completed, p.pending],
-                }))}
-              />
-            </CardContent>
-          </Card>
+          {employeeRows.length === 0 ? (
+            <EmptyState title="No employee analytics yet" />
+          ) : (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Employee productivity</CardTitle>
+                  <CardDescription>
+                    Completed against still-open work for the busiest employees.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <GroupedBarChart
+                    seriesLabels={["Completed", "Open"]}
+                    rows={topPerformers.map((row) => ({
+                      label: row.name,
+                      values: [row.completedTasks, row.assignedWorkload],
+                    }))}
+                  />
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Productivity detail</CardTitle>
-              <CardDescription>
-                Average completion time is measured from task creation to
-                approval.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Assigned</TableHead>
-                      <TableHead className="text-right">Completed</TableHead>
-                      <TableHead className="text-right">Pending</TableHead>
-                      <TableHead className="text-right">Overdue</TableHead>
-                      <TableHead className="text-right">Avg. time</TableHead>
-                      <TableHead>Completion</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {productivity.map((p) => (
-                      <TableRow key={p.employeeId}>
-                        <TableCell>
-                          <Link
-                            href={`/dashboard/employees/${p.employeeId}`}
-                            className="font-medium hover:underline"
-                          >
-                            {p.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <RoleBadge role={p.role} />
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.assigned}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.completed}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.pending}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.overdue}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.avgCompletionDays
-                            ? `${p.avgCompletionDays}d`
-                            : "—"}
-                        </TableCell>
-                        <TableCell>
-                          <ProgressCell value={p.completionRate} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Productivity detail</CardTitle>
+                  <CardDescription>
+                    Productivity score is the completion rate minus half the
+                    overdue rate.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Employee</TableHead>
+                          <TableHead className="text-right">Assigned</TableHead>
+                          <TableHead className="text-right">Completed</TableHead>
+                          <TableHead className="text-right">Open</TableHead>
+                          <TableHead className="text-right">Overdue</TableHead>
+                          <TableHead className="text-right">Avg. time</TableHead>
+                          <TableHead className="text-right">Score</TableHead>
+                          <TableHead>Completion</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {employeeRows.map((row) => (
+                          <TableRow key={row.employeeId}>
+                            <TableCell>
+                              <Link
+                                href={`/dashboard/employees/${row.employeeId}`}
+                                className="font-medium hover:underline"
+                              >
+                                {row.name}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.totalTasks}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.completedTasks}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.assignedWorkload}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.overdueTasks}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.averageCompletionHours
+                                ? `${Math.round((row.averageCompletionHours / 24) * 10) / 10}d`
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {Math.round(row.productivityScore)}
+                            </TableCell>
+                            <TableCell>
+                              <ProgressCell
+                                value={Math.round(row.completionRate)}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
 
         {/* Teams ----------------------------------------------------------- */}
         <TabsContent value="teams" className="mt-4 space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Completion rate by role</CardTitle>
-                <CardDescription>
-                  Share of assigned tasks each role has closed.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <HBarChart
-                  valueSuffix="%"
-                  max={100}
-                  tableColumns={["Role", "Completion rate"]}
-                  data={teams.map((t) => ({
-                    label: t.role,
-                    value: t.completionRate,
-                    meta: `${t.completed} of ${t.assigned} tasks · ${t.headcount} people`,
-                  }))}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Workload by role</CardTitle>
-                <CardDescription>
-                  Average number of tasks per person.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <HBarChart
-                  tableColumns={["Role", "Avg. tasks per person"]}
-                  data={teams.map((t) => ({
-                    label: t.role,
-                    value: t.avgWorkload,
-                    meta: `${t.pending} open · ${t.overdue} overdue`,
-                  }))}
-                />
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Team comparison</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Headcount</TableHead>
-                      <TableHead className="text-right">Assigned</TableHead>
-                      <TableHead className="text-right">Completed</TableHead>
-                      <TableHead className="text-right">Pending</TableHead>
-                      <TableHead className="text-right">Overdue</TableHead>
-                      <TableHead className="text-right">Avg. load</TableHead>
-                      <TableHead>Completion</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {teams.map((t) => (
-                      <TableRow key={t.role}>
-                        <TableCell className="font-medium">{t.role}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {t.headcount}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {t.assigned}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {t.completed}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {t.pending}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {t.overdue}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {t.avgWorkload}
-                        </TableCell>
-                        <TableCell>
-                          <ProgressCell value={t.completionRate} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+          {teams.length === 0 ? (
+            <EmptyState
+              title="No team analytics yet"
+              description="Teams appear once projects have members with tasks."
+            />
+          ) : (
+            teams.map((team) => (
+              <Card key={team.projectId}>
+                <CardHeader>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <CardTitle>
+                        <Link
+                          href={`/dashboard/projects/${team.projectId}`}
+                          className="hover:underline"
+                        >
+                          {team.projectName}
+                        </Link>
+                      </CardTitle>
+                      <CardDescription>
+                        {team.completedTasks} of {team.totalTasks} tasks
+                        complete · {team.openTasks} open
+                      </CardDescription>
+                    </div>
+                    <div className="w-40">
+                      <ProgressCell
+                        value={Math.round(team.completionPercentage)}
+                      />
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {team.members.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No members with tasks on this project.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Member</TableHead>
+                            <TableHead className="text-right">Tasks</TableHead>
+                            <TableHead className="text-right">Done</TableHead>
+                            <TableHead className="text-right">Open</TableHead>
+                            <TableHead className="text-right">
+                              Workload
+                            </TableHead>
+                            <TableHead>Completion</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {team.members.map((member) => (
+                            <TableRow key={member.employeeId}>
+                              <TableCell>
+                                <Link
+                                  href={`/dashboard/employees/${member.employeeId}`}
+                                  className="font-medium hover:underline"
+                                >
+                                  {member.name}
+                                </Link>
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {member.totalTasks}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {member.completedTasks}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {member.openTasks}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {Math.round(member.workloadShare)}%
+                              </TableCell>
+                              <TableCell>
+                                <ProgressCell
+                                  value={Math.round(member.completionRate)}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          )}
         </TabsContent>
 
         {/* Projects -------------------------------------------------------- */}
         <TabsContent value="projects" className="mt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Projects ranked by completion</CardTitle>
-              <CardDescription>
-                Percentage of tasks closed in each project.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <HBarChart
-                valueSuffix="%"
-                max={100}
-                tableColumns={["Project", "Completion"]}
-                data={rankedProjects.map((p) => ({
-                  label: p.name,
-                  value: p.completionRate,
-                  meta: `${p.completed}/${p.total} tasks · ${p.members} members`,
-                }))}
-              />
-            </CardContent>
-          </Card>
+          {projectRows.length === 0 ? (
+            <EmptyState title="No project analytics yet" />
+          ) : (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Projects ranked by completion</CardTitle>
+                  <CardDescription>
+                    Percentage of tasks closed in each project.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <HBarChart
+                    valueSuffix="%"
+                    max={100}
+                    tableColumns={["Project", "Completion"]}
+                    data={rankedProjects.map((row) => ({
+                      label: row.name,
+                      value: Math.round(row.completionPercentage),
+                      meta: `${row.completedTasks}/${row.totalTasks} tasks · ${row.memberCount ?? 0} members`,
+                    }))}
+                  />
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Project performance</CardTitle>
-              <CardDescription>
-                Delays are counted as tasks past their due date.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Members</TableHead>
-                      <TableHead className="text-right">Remaining</TableHead>
-                      <TableHead className="text-right">Overdue</TableHead>
-                      <TableHead className="text-right">Deadline</TableHead>
-                      <TableHead>Completion</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rankedProjects.map((p) => (
-                      <TableRow key={p.projectId}>
-                        <TableCell>
-                          <Link
-                            href={`/dashboard/projects/${p.projectId}`}
-                            className="font-medium hover:underline"
-                          >
-                            {p.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <ProjectStatusBadge status={p.status} />
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.members}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.pending}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.overdue}
-                        </TableCell>
-                        <TableCell className="text-right text-xs whitespace-nowrap">
-                          {deadlineLabel(p.daysToDeadline)}
-                        </TableCell>
-                        <TableCell>
-                          <ProgressCell value={p.completionRate} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Project performance</CardTitle>
+                  <CardDescription>
+                    Estimated completion extrapolates from the observed rate,
+                    and is blank until a task has closed.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Project</TableHead>
+                          <TableHead className="text-right">Members</TableHead>
+                          <TableHead className="text-right">Remaining</TableHead>
+                          <TableHead className="text-right">Blocked</TableHead>
+                          <TableHead className="text-right">Overdue</TableHead>
+                          <TableHead className="text-right">Due</TableHead>
+                          <TableHead className="text-right">Est. done</TableHead>
+                          <TableHead>Completion</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rankedProjects.map((row) => (
+                          <TableRow key={row.projectId}>
+                            <TableCell>
+                              <Link
+                                href={`/dashboard/projects/${row.projectId}`}
+                                className="font-medium hover:underline"
+                              >
+                                {row.name}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.memberCount ?? 0}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.remainingTasks}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.blockedTasks}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.overdueTasks}
+                            </TableCell>
+                            <TableCell className="text-right text-xs whitespace-nowrap">
+                              {formatDate(row.endDate?.slice(0, 10))}
+                            </TableCell>
+                            <TableCell className="text-right text-xs whitespace-nowrap">
+                              {formatDate(
+                                row.estimatedCompletionDate?.slice(0, 10),
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <ProgressCell
+                                value={Math.round(row.completionPercentage)}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
       </Tabs>
     </>
   );
 }
 
-/** `in 21 days` / `38 days ago`, measured from the reference date. */
-function deadlineLabel(days: number): string {
-  if (days === 0) return "today";
-  return days > 0 ? `in ${days} days` : `${Math.abs(days)} days ago`;
+function AnalyticsSkeleton() {
+  return (
+    <div className="space-y-6">
+      <Skeleton className="h-10 w-56" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+      <Skeleton className="h-80 w-full" />
+    </div>
+  );
 }

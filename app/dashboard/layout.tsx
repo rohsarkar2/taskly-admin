@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import {
   SidebarProvider,
@@ -21,7 +22,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AuthGuard } from "@/components/AuthGuard";
 import { useAppSelector } from "@/lib/redux/hooks";
-import { formatDate, notifications, organizationSettings } from "@/lib/mock-data";
+import { toNotifications } from "@/lib/api/adapters";
+import { listNotifications } from "@/lib/api/notifications";
+import { formatDateTime, organizationSettings } from "@/lib/mock-data";
+import type { AppNotification } from "@/lib/types";
 import { toast } from "sonner";
 
 export default function DashboardLayout({
@@ -33,6 +37,32 @@ export default function DashboardLayout({
   const orgId =
     organization?.uniqueOrganizationId ??
     organizationSettings.uniqueOrganizationId;
+
+  /**
+   * The bell shows the five most recent notifications. Failures are silent —
+   * an unreachable inbox should not block the dashboard chrome.
+   */
+  const [notifications, setNotifications] = React.useState<AppNotification[]>(
+    [],
+  );
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const result = await listNotifications({ limit: 20 });
+        if (!cancelled) setNotifications(toNotifications(result.items));
+      } catch (error) {
+        console.error("Failed to load notifications:", error);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const unread = notifications.filter((n) => !n.read);
 
@@ -91,6 +121,11 @@ export default function DashboardLayout({
                     <Badge variant="secondary">{unread.length} new</Badge>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  {notifications.length === 0 && (
+                    <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+                      Nothing new.
+                    </p>
+                  )}
                   {notifications.slice(0, 5).map((n) => (
                     <DropdownMenuItem key={n.id} asChild>
                       <Link
@@ -102,7 +137,7 @@ export default function DashboardLayout({
                           {n.body}
                         </span>
                         <span className="text-[0.65rem] text-muted-foreground">
-                          {formatDate(n.at)}
+                          {formatDateTime(n.at)}
                         </span>
                       </Link>
                     </DropdownMenuItem>

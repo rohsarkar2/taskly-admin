@@ -270,126 +270,150 @@ export const projects: Project[] = [
   {
     id: "p-1",
     name: "Mobile App",
-    key: "MOB",
+    code: "MOB",
     description:
       "React Native app for employees to register, create tasks and track their work on the go.",
     status: "Active",
+    priority: "High",
+    tags: [],
     startDate: "2026-02-02",
     deadline: "2026-09-30",
     memberIds: ["e-1", "e-2", "e-3", "e-7"],
     leadIds: ["e-2"],
     managerIds: ["e-1"],
     workflow: {
-      approvalRequired: true,
-      autoApprove: false,
-      approvers: ["Team Lead", "Manager"],
-      adminCanApprove: true,
+      requireTaskApproval: true,
+      approverRole: "Team Lead",
+      approverIds: [],
       defaultPriority: "High",
+      allowMemberTaskCreation: true,
+      allowMemberTaskDeletion: false,
+      autoCompleteOnAllTasksDone: false,
     },
     createdAt: "2026-02-01",
   },
   {
     id: "p-2",
     name: "Website Revamp",
-    key: "WEB",
+    code: "WEB",
     description:
       "Marketing site rebuild with a new design system, CMS integration and Core Web Vitals budget.",
     status: "Active",
+    priority: "High",
+    tags: [],
     startDate: "2026-03-16",
     deadline: "2026-08-28",
     memberIds: ["e-2", "e-5", "e-6", "e-7", "e-8", "e-11"],
     leadIds: ["e-2", "e-11"],
     managerIds: ["e-6"],
     workflow: {
-      approvalRequired: true,
-      autoApprove: false,
-      approvers: ["Team Lead"],
-      adminCanApprove: true,
+      requireTaskApproval: true,
+      approverRole: "Team Lead",
+      approverIds: [],
       defaultPriority: "Medium",
+      allowMemberTaskCreation: true,
+      allowMemberTaskDeletion: false,
+      autoCompleteOnAllTasksDone: false,
     },
     createdAt: "2026-03-14",
   },
   {
     id: "p-3",
     name: "Backend API",
-    key: "API",
+    code: "API",
     description:
       "Core services for auth, organizations, task workflow and reporting. Powers both admin and mobile clients.",
     status: "Active",
+    priority: "High",
+    tags: [],
     startDate: "2026-02-16",
     deadline: "2026-10-15",
     memberIds: ["e-1", "e-4", "e-5", "e-9", "e-10"],
     leadIds: ["e-4"],
     managerIds: ["e-1"],
     workflow: {
-      approvalRequired: true,
-      autoApprove: false,
-      approvers: ["Team Lead", "Manager"],
-      adminCanApprove: true,
+      requireTaskApproval: true,
+      approverRole: "Team Lead",
+      approverIds: [],
       defaultPriority: "High",
+      allowMemberTaskCreation: true,
+      allowMemberTaskDeletion: false,
+      autoCompleteOnAllTasksDone: false,
     },
     createdAt: "2026-02-15",
   },
   {
     id: "p-4",
     name: "HR Portal",
-    key: "HRP",
+    code: "HRP",
     description:
       "Internal portal for leave, payroll exports and onboarding checklists. Paused pending vendor decision.",
     status: "On Hold",
+    priority: "Low",
+    tags: [],
     startDate: "2026-06-08",
     deadline: "2026-11-20",
     memberIds: ["e-4", "e-6", "e-11"],
     leadIds: ["e-11"],
     managerIds: ["e-6"],
     workflow: {
-      approvalRequired: false,
-      autoApprove: true,
-      approvers: ["Manager"],
-      adminCanApprove: true,
+      requireTaskApproval: false,
+      approverRole: "Manager",
+      approverIds: [],
       defaultPriority: "Low",
+      allowMemberTaskCreation: true,
+      allowMemberTaskDeletion: false,
+      autoCompleteOnAllTasksDone: false,
     },
     createdAt: "2026-06-05",
   },
   {
     id: "p-5",
     name: "Data Migration",
-    key: "DMG",
+    code: "DMG",
     description:
       "One-off migration of legacy task records into the new schema. Delivered ahead of the June deadline.",
     status: "Completed",
+    priority: "Medium",
+    tags: [],
     startDate: "2026-04-06",
     deadline: "2026-06-30",
     memberIds: ["e-10", "e-4"],
     leadIds: ["e-4"],
     managerIds: ["e-1"],
     workflow: {
-      approvalRequired: true,
-      autoApprove: false,
-      approvers: ["Team Lead"],
-      adminCanApprove: true,
+      requireTaskApproval: true,
+      approverRole: "Team Lead",
+      approverIds: [],
       defaultPriority: "Medium",
+      allowMemberTaskCreation: true,
+      allowMemberTaskDeletion: false,
+      autoCompleteOnAllTasksDone: false,
     },
     createdAt: "2026-04-01",
   },
   {
     id: "p-6",
     name: "Legacy CRM",
-    key: "CRM",
+    code: "CRM",
     description:
       "Superseded by the Backend API project. Kept read-only for historical reporting.",
     status: "Archived",
+    priority: "Low",
+    tags: [],
     startDate: "2026-01-12",
     deadline: "2026-05-15",
     memberIds: ["e-1"],
     leadIds: [],
     managerIds: ["e-1"],
     workflow: {
-      approvalRequired: false,
-      autoApprove: true,
-      approvers: [],
-      adminCanApprove: true,
+      requireTaskApproval: false,
+      approverRole: null,
+      approverIds: [],
       defaultPriority: "Low",
+      allowMemberTaskCreation: true,
+      allowMemberTaskDeletion: false,
+      autoCompleteOnAllTasksDone: false,
     },
     createdAt: "2026-01-10",
   },
@@ -469,6 +493,7 @@ const DESCRIPTIONS: Record<TaskStatus, string> = {
   "To Do": "Scoped and queued. Not picked up yet.",
   "In Progress": "Actively being worked on by the assignee.",
   "Pending Approval": "Submitted by the creator and waiting on an approver.",
+  Returned: "Sent back by an approver for rework before resubmitting.",
   Blocked: "Work has stopped pending an external dependency.",
   Completed: "Delivered and signed off by the approver.",
   Rejected: "Returned by the approver with comments.",
@@ -753,9 +778,14 @@ export const monthlyTaskVolume = [
 /* Date helpers                                                               */
 /* -------------------------------------------------------------------------- */
 
-/** Parses an ISO `yyyy-mm-dd` as a UTC date so results never shift by timezone. */
+/**
+ * Parses a date.
+ *
+ * A bare `yyyy-mm-dd` is read as UTC so day arithmetic never shifts by
+ * timezone; a full ISO timestamp is passed through untouched.
+ */
 export function parseDate(iso: string): Date {
-  return new Date(`${iso}T00:00:00Z`);
+  return new Date(iso.includes("T") ? iso : `${iso}T00:00:00Z`);
 }
 
 export function addDays(iso: string, days: number): string {
@@ -769,14 +799,60 @@ export function daysBetween(fromIso: string, toIso: string): number {
   return Math.round(ms / 86_400_000);
 }
 
-/** `12 Jun 2026` — stable across locales, so no hydration drift. */
-export function formatDate(iso: string): string {
+/**
+ * `12 Jun 2026` — stable across locales, so no hydration drift.
+ *
+ * Accepts null so callers can pass optional dates (an unset task due date, for
+ * instance) without guarding at every site.
+ */
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
   const d = parseDate(iso);
+  // An unparseable value would otherwise render as "NaN undefined NaN".
+  if (Number.isNaN(d.getTime())) return "—";
   const months = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
   ];
   return `${d.getUTCDate()} ${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/**
+ * `7 Aug 2026, 11:57 pm` — date plus 12-hour time, in the reader's own
+ * timezone.
+ *
+ * Local time is safe here because everything that calls this renders inside
+ * the dashboard, which `AuthGuard` withholds until the session is restored in
+ * an effect — so it is never part of the server-rendered HTML and cannot cause
+ * a hydration mismatch. Values with no time component fall back to the date.
+ */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  if (!iso.includes("T")) return formatDate(iso);
+
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+
+  const hours = d.getHours();
+  // Midnight and noon are 12, not 0 — `% 12` alone would print "0:27 am".
+  const hour12 = hours % 12 || 12;
+  const meridiem = hours < 12 ? "am" : "pm";
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+
+  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}, ${hour12}:${minutes} ${meridiem}`;
+}
+
+/** `9 Jul` — compact axis label for a daily series. */
+export function formatShortDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = parseDate(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
 }
 
 /** `3 days ago` / `in 5 days`, measured against `REFERENCE_TODAY`. */
@@ -827,6 +903,7 @@ export function initialsOf(name: string): string {
 
 /** A task is overdue when it is past due and not yet in a terminal state. */
 export function isOverdue(task: Task): boolean {
+  if (!task.dueDate) return false;
   if (task.status === "Completed" || task.status === "Rejected") return false;
   return daysBetween(REFERENCE_TODAY, task.dueDate) < 0;
 }
@@ -848,6 +925,7 @@ export function taskStatusBreakdown(source: Task[] = tasks) {
     "To Do": 0,
     "In Progress": 0,
     "Pending Approval": 0,
+    Returned: 0,
     Blocked: 0,
     Completed: 0,
     Rejected: 0,

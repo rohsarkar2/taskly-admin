@@ -22,11 +22,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   EmptyState,
   PageHeader,
+  SampleDataNotice,
 } from "@/components/dashboard/ui-bits";
-import { formatDate, notifications as seed, relativeToToday } from "@/lib/mock-data";
+import { getErrorMessage } from "@/lib/api/auth";
+import { toNotifications } from "@/lib/api/adapters";
+import {
+  clearReadNotifications,
+  deleteNotification,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from "@/lib/api/notifications";
+import { formatDateTime, notifications as seed } from "@/lib/mock-data";
 import type { AppNotification, NotificationKind } from "@/lib/types";
 
 const KIND_ICON: Record<
@@ -51,18 +62,113 @@ const KIND_COLOR: Record<NotificationKind, string> = {
 };
 
 export default function NotificationsPage() {
-  const [list, setList] = React.useState<AppNotification[]>(seed);
+  const [list, setList] = React.useState<AppNotification[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [usingSampleData, setUsingSampleData] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
+
+  React.useEffect(() => {
+    const signal = { cancelled: false };
+
+    const load = async () => {
+      try {
+        const result = await listNotifications({ limit: 100 });
+        if (signal.cancelled) return;
+
+        setList(toNotifications(result.items));
+        setUsingSampleData(false);
+      } catch (error) {
+        if (signal.cancelled) return;
+        console.error("Failed to load notifications:", error);
+        setList(seed);
+        setUsingSampleData(true);
+      } finally {
+        if (!signal.cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const refresh = () => {
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
 
   const unread = list.filter((n) => !n.read);
 
-  const markRead = (id: string) =>
+  const markRead = async (id: string) => {
+    const previous = list;
     setList((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
     );
 
-  const markAllRead = () => {
+    if (usingSampleData) return;
+
+    try {
+      await markNotificationRead(id);
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not mark it as read."));
+    }
+  };
+
+  const markAllRead = async () => {
+    const previous = list;
     setList((prev) => prev.map((n) => ({ ...n, read: true })));
-    toast.success("All notifications marked as read");
+
+    if (usingSampleData) {
+      toast.success("All notifications marked as read", {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await markAllNotificationsRead();
+      toast.success(message || "All notifications marked as read");
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not mark them as read."));
+    }
+  };
+
+  const remove = async (id: string) => {
+    const previous = list;
+    setList((prev) => prev.filter((n) => n.id !== id));
+
+    if (usingSampleData) return;
+
+    try {
+      await deleteNotification(id);
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not delete it."));
+    }
+  };
+
+  /** Clears everything already read, leaving the unread inbox intact. */
+  const clearRead = async () => {
+    const previous = list;
+    setList((prev) => prev.filter((n) => !n.read));
+
+    if (usingSampleData) {
+      toast.success("Read notifications cleared", {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await clearReadNotifications();
+      toast.success(message || "Read notifications cleared");
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not clear them."));
+    }
   };
 
   return (
@@ -71,40 +177,66 @@ export default function NotificationsPage() {
         title="Notifications"
         description="Registrations, approvals, deadlines and overdue work."
         action={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={markAllRead}
-            disabled={unread.length === 0}
-          >
-            Mark all as read
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearRead}
+              disabled={list.length === unread.length}
+            >
+              Clear read
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={markAllRead}
+              disabled={unread.length === 0}
+            >
+              Mark all as read
+            </Button>
+          </>
         }
       />
 
-      <Tabs defaultValue="unread">
-        <TabsList>
-          <TabsTrigger value="unread">Unread ({unread.length})</TabsTrigger>
-          <TabsTrigger value="all">All ({list.length})</TabsTrigger>
-        </TabsList>
+      {usingSampleData && (
+        <SampleDataNotice
+          message="Could not reach the notifications API — showing sample data."
+          onRetry={refresh}
+        />
+      )}
 
-        <TabsContent value="unread" className="mt-4">
-          <NotificationList
-            items={unread}
-            onRead={markRead}
-            emptyTitle="You are all caught up"
-            emptyBody="New registrations and approval requests will show up here."
-          />
-        </TabsContent>
+      {loading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      ) : (
+        <Tabs defaultValue="unread">
+          <TabsList>
+            <TabsTrigger value="unread">Unread ({unread.length})</TabsTrigger>
+            <TabsTrigger value="all">All ({list.length})</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="all" className="mt-4">
-          <NotificationList
-            items={list}
-            onRead={markRead}
-            emptyTitle="No notifications yet"
-          />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="unread" className="mt-4">
+            <NotificationList
+              items={unread}
+              onRead={markRead}
+              onDelete={remove}
+              emptyTitle="You are all caught up"
+              emptyBody="New registrations and approval requests will show up here."
+            />
+          </TabsContent>
+
+          <TabsContent value="all" className="mt-4">
+            <NotificationList
+              items={list}
+              onRead={markRead}
+              onDelete={remove}
+              emptyTitle="No notifications yet"
+            />
+          </TabsContent>
+        </Tabs>
+      )}
     </>
   );
 }
@@ -112,11 +244,13 @@ export default function NotificationsPage() {
 function NotificationList({
   items,
   onRead,
+  onDelete,
   emptyTitle,
   emptyBody,
 }: {
   items: AppNotification[];
   onRead: (id: string) => void;
+  onDelete: (id: string) => void;
   emptyTitle: string;
   emptyBody?: string;
 }) {
@@ -161,8 +295,7 @@ function NotificationList({
                   </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-3">
                     <span className="text-xs text-muted-foreground">
-                      {formatDate(notification.at)} ·{" "}
-                      {relativeToToday(notification.at)}
+                      {formatDateTime(notification.at)}
                     </span>
                     {notification.href && (
                       <Button variant="ghost" size="xs" asChild>
@@ -183,6 +316,13 @@ function NotificationList({
                         Mark as read
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => onDelete(notification.id)}
+                    >
+                      Delete
+                    </Button>
                   </div>
                 </div>
               </li>

@@ -25,9 +25,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { EmptyState, PageHeader } from "@/components/dashboard/ui-bits";
-import { activityLogs, formatDate, relativeToToday } from "@/lib/mock-data";
-import type { ActivityKind } from "@/lib/types";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  EmptyState,
+  PageHeader,
+  SampleDataNotice,
+} from "@/components/dashboard/ui-bits";
+import { toActivityLogs } from "@/lib/api/adapters";
+import { listActivityLogs } from "@/lib/api/activity";
+import {
+  activityLogs as seedLogs,
+  formatDate,
+  formatDateTime,
+  relativeToToday,
+} from "@/lib/mock-data";
+import type { ActivityKind, ActivityLog } from "@/lib/types";
 
 const KIND_ICON: Record<
   ActivityKind,
@@ -60,13 +72,65 @@ const KINDS: ActivityKind[] = [
 ];
 
 export default function ActivityLogPage() {
+  const [logs, setLogs] = React.useState<ActivityLog[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [usingSampleData, setUsingSampleData] = React.useState(false);
+  const [total, setTotal] = React.useState(0);
+  const [reloadKey, setReloadKey] = React.useState(0);
+
   const [query, setQuery] = React.useState("");
   const [kindFilter, setKindFilter] = React.useState<ActivityKind | "all">(
     "all",
   );
 
-  const visible = activityLogs.filter((log) => {
+  React.useEffect(() => {
+    const signal = { cancelled: false };
+
+    const timer = setTimeout(
+      () => {
+        setLoading(true);
+
+        const load = async () => {
+          try {
+            // The server filters on its own `entityType` vocabulary rather than
+            // the UI's buckets, so only the search goes over the wire; the kind
+            // filter is applied below against the mapped result.
+            const result = await listActivityLogs({
+              search: query || undefined,
+              limit: 100,
+            });
+            if (signal.cancelled) return;
+
+            setLogs(toActivityLogs(result.items));
+            setTotal(result.total);
+            setUsingSampleData(false);
+          } catch (error) {
+            if (signal.cancelled) return;
+            console.error("Failed to load activity:", error);
+            setLogs(seedLogs);
+            setTotal(seedLogs.length);
+            setUsingSampleData(true);
+          } finally {
+            if (!signal.cancelled) setLoading(false);
+          }
+        };
+
+        load();
+      },
+      query ? 300 : 0,
+    );
+
+    return () => {
+      signal.cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, reloadKey]);
+
+  const refresh = () => setReloadKey((key) => key + 1);
+
+  const visible = logs.filter((log) => {
     if (kindFilter !== "all" && log.kind !== kindFilter) return false;
+    if (!usingSampleData) return true;
     return `${log.actor} ${log.message}`
       .toLowerCase()
       .includes(query.toLowerCase());
@@ -74,7 +138,8 @@ export default function ActivityLogPage() {
 
   /** Group by date so the log reads as a diary rather than a flat list. */
   const grouped = visible.reduce<Record<string, typeof visible>>((acc, log) => {
-    (acc[log.at] ??= []).push(log);
+    const day = log.at.slice(0, 10);
+    (acc[day] ??= []).push(log);
     return acc;
   }, {});
 
@@ -86,6 +151,13 @@ export default function ActivityLogPage() {
         title="Activity Log"
         description="Every important action taken in the organization, newest first."
       />
+
+      {usingSampleData && (
+        <SampleDataNotice
+          message="Could not reach the activity API — showing sample data."
+          onRetry={refresh}
+        />
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -123,11 +195,16 @@ export default function ActivityLogPage() {
           </Button>
         )}
         <span className="ml-auto text-xs text-muted-foreground">
-          {visible.length} of {activityLogs.length} entries
+          {visible.length} of {total || visible.length} entries
         </span>
       </div>
 
-      {visible.length === 0 ? (
+      {loading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : visible.length === 0 ? (
         <EmptyState
           title="No activity matches"
           description="Try a different type or search term."
@@ -156,12 +233,17 @@ export default function ActivityLogPage() {
                         >
                           <Icon className="size-3.5" />
                         </span>
-                        <p className="text-sm">
-                          <span className="font-medium">{log.actor}</span>{" "}
-                          <span className="text-muted-foreground">
-                            {log.message}
-                          </span>
-                        </p>
+                        <div className="min-w-0">
+                          <p className="text-sm">
+                            <span className="font-medium">{log.actor}</span>{" "}
+                            <span className="text-muted-foreground">
+                              {log.message}
+                            </span>
+                          </p>
+                          <p className="text-[0.65rem] text-muted-foreground">
+                            {formatDateTime(log.at)}
+                          </p>
+                        </div>
                       </li>
                     );
                   })}

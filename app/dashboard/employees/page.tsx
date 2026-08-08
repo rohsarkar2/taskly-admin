@@ -233,7 +233,11 @@ export default function EmployeesPage() {
 
     const target = removeTarget;
     const previous = roster;
-    setRoster((prev) => prev.filter((e) => e.id !== target.id));
+    // Removal is soft: the record is kept so old tasks still resolve, so the
+    // row stays and flips to Removed rather than disappearing.
+    setRoster((prev) =>
+      prev.map((e) => (e.id === target.id ? { ...e, status: "Removed" } : e)),
+    );
     setRemoveTarget(null);
 
     if (usingSampleData) {
@@ -245,9 +249,12 @@ export default function EmployeesPage() {
 
     try {
       const { message } = await removeEmployee(target.id);
-      setTotal((count) => Math.max(0, count - 1));
       toast.success(
         message || `${target.name} was removed from the organization`,
+        {
+          description:
+            "Their record is kept, and their open tasks are now unassigned.",
+        },
       );
     } catch (error) {
       setRoster(previous);
@@ -464,7 +471,13 @@ export default function EmployeesPage() {
                             >
                               Change role
                             </DropdownMenuItem>
-                            {employee.status === "Active" ? (
+                            {/*
+                              Only active employees can be suspended, and only
+                              suspended ones activated — the server rejects the
+                              other transitions, and a pending employee has to
+                              go through Employee Requests instead.
+                            */}
+                            {employee.status === "Active" && (
                               <DropdownMenuItem
                                 onSelect={() =>
                                   setStatus(employee, "Suspended")
@@ -472,7 +485,8 @@ export default function EmployeesPage() {
                               >
                                 Suspend employee
                               </DropdownMenuItem>
-                            ) : (
+                            )}
+                            {employee.status === "Suspended" && (
                               <DropdownMenuItem
                                 onSelect={() => setStatus(employee, "Active")}
                               >
@@ -480,12 +494,14 @@ export default function EmployeesPage() {
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onSelect={() => setRemoveTarget(employee)}
-                            >
-                              Remove from organization
-                            </DropdownMenuItem>
+                            {employee.status !== "Removed" && (
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onSelect={() => setRemoveTarget(employee)}
+                              >
+                                Remove from organization
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -555,8 +571,9 @@ export default function EmployeesPage() {
               Remove {removeTarget?.name} from the organization?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              They lose access immediately. Their tasks stay in the system but
-              become unassigned, so reassign anything in flight first.
+              They lose access immediately and are pulled from every project.
+              Their record is kept so past tasks and comments still resolve, and
+              their open tasks become unassigned.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

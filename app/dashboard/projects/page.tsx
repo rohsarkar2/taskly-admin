@@ -2,7 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2, FolderKanban, MoreHorizontal, PauseCircle, Plus } from "lucide-react";
+import axios from "axios";
+import {
+  CheckCircle2,
+  FolderKanban,
+  MoreHorizontal,
+  PauseCircle,
+  Plus,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -15,6 +22,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -50,13 +59,28 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Meter } from "@/components/charts/bar-chart";
 import {
-  AvatarStack,
   EmptyState,
   PageHeader,
+  PriorityBadge,
   ProjectStatusBadge,
+  SampleDataNotice,
   StatGrid,
   StatTile,
 } from "@/components/dashboard/ui-bits";
+import { getErrorMessage } from "@/lib/api/auth";
+import {
+  toApiProjectStatus,
+  toProject,
+  toProjects,
+} from "@/lib/api/adapters";
+import {
+  archiveProject,
+  createProject,
+  deleteProject,
+  listProjects,
+  unarchiveProject,
+  updateProject,
+} from "@/lib/api/projects";
 import {
   formatDate,
   projects as seedProjects,
@@ -73,15 +97,23 @@ import {
 
 const BLANK_FORM = {
   name: "",
-  key: "",
+  code: "",
   description: "",
-  deadline: "",
+  startDate: "",
+  endDate: "",
+  priority: "Medium" as Priority,
+  tags: "",
+  requireTaskApproval: true,
   defaultPriority: "Medium" as Priority,
-  approvalRequired: true,
 };
 
 export default function ProjectsPage() {
-  const [list, setList] = React.useState<Project[]>(seedProjects);
+  const [list, setList] = React.useState<Project[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [usingSampleData, setUsingSampleData] = React.useState(false);
+  const [total, setTotal] = React.useState(0);
+  const [reloadKey, setReloadKey] = React.useState(0);
+
   const [query, setQuery] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<ProjectStatus | "all">(
     "all",
@@ -90,20 +122,84 @@ export default function ProjectsPage() {
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Project | null>(null);
   const [form, setForm] = React.useState(BLANK_FORM);
+  const [saving, setSaving] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<Project | null>(null);
+  /** Set when a delete came back 409 because the project still has tasks. */
+  const [forceDeleteTarget, setForceDeleteTarget] =
+    React.useState<Project | null>(null);
 
-  const stats = React.useMemo(() => projectPerformance(), []);
-  const rateOf = (projectId: string) =>
-    stats.find((s) => s.projectId === projectId)?.completionRate ?? 0;
-  const totalsOf = (projectId: string) =>
-    stats.find((s) => s.projectId === projectId);
+  React.useEffect(() => {
+    const signal = { cancelled: false };
 
-  const visible = list.filter((project) => {
-    if (statusFilter !== "all" && project.status !== statusFilter) return false;
-    return `${project.name} ${project.key} ${project.description}`
-      .toLowerCase()
-      .includes(query.toLowerCase());
-  });
+    const timer = setTimeout(
+      () => {
+        setLoading(true);
+
+        const load = async () => {
+          try {
+            const result = await listProjects({
+              search: query || undefined,
+              status: statusFilter,
+              limit: 100,
+            });
+            if (signal.cancelled) return;
+
+            setList(toProjects(result.items));
+            setTotal(result.total);
+            setUsingSampleData(false);
+          } catch (error) {
+            if (signal.cancelled) return;
+            console.error("Failed to load projects:", error);
+            setList(seedProjects);
+            setTotal(seedProjects.length);
+            setUsingSampleData(true);
+          } finally {
+            if (!signal.cancelled) setLoading(false);
+          }
+        };
+
+        load();
+      },
+      query ? 300 : 0,
+    );
+
+    return () => {
+      signal.cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, statusFilter, reloadKey]);
+
+  const refresh = () => setReloadKey((key) => key + 1);
+
+  /**
+   * The API returns `taskStats` on every project; the fixtures do not, so those
+   * fall back to the derived roll-up.
+   */
+  const statsFor = (project: Project) => {
+    if (project.taskStats) return project.taskStats;
+
+    const derived = projectPerformance().find((p) => p.projectId === project.id);
+    return {
+      total: derived?.total ?? 0,
+      completed: derived?.completed ?? 0,
+      pending: derived?.pending ?? 0,
+      inProgress: 0,
+      pendingApproval: 0,
+      remaining: derived?.pending ?? 0,
+      completionPercentage: derived?.completionRate ?? 0,
+    };
+  };
+
+  // Sample mode has no server to filter, so the predicates run locally.
+  const visible = usingSampleData
+    ? list.filter((project) => {
+        if (statusFilter !== "all" && project.status !== statusFilter)
+          return false;
+        return `${project.name} ${project.code} ${project.description}`
+          .toLowerCase()
+          .includes(query.toLowerCase());
+      })
+    : list;
 
   const openCreate = () => {
     setEditing(null);
@@ -115,86 +211,183 @@ export default function ProjectsPage() {
     setEditing(project);
     setForm({
       name: project.name,
-      key: project.key,
+      code: project.code,
       description: project.description,
-      deadline: project.deadline,
+      startDate: project.startDate,
+      endDate: project.deadline,
+      priority: project.priority,
+      tags: project.tags.join(", "),
+      requireTaskApproval: project.workflow.requireTaskApproval,
       defaultPriority: project.workflow.defaultPriority,
-      approvalRequired: project.workflow.approvalRequired,
     });
     setFormOpen(true);
   };
 
-  const submitForm = () => {
+  const parseTags = () =>
+    form.tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
+  const submitForm = async () => {
     if (!form.name.trim()) {
       toast.error("Give the project a name");
       return;
     }
-
-    if (editing) {
-      setList((prev) =>
-        prev.map((p) =>
-          p.id === editing.id
-            ? {
-                ...p,
-                name: form.name,
-                key: form.key || p.key,
-                description: form.description,
-                deadline: form.deadline || p.deadline,
-                workflow: {
-                  ...p.workflow,
-                  defaultPriority: form.defaultPriority,
-                  approvalRequired: form.approvalRequired,
-                },
-              }
-            : p,
-        ),
-      );
-      toast.success(`${form.name} updated`);
-    } else {
-      const id = `p-new-${list.length + 1}`;
-      setList((prev) => [
-        {
-          id,
-          name: form.name,
-          key: form.key || form.name.slice(0, 3).toUpperCase(),
-          description: form.description,
-          status: "Active",
-          startDate: new Date().toISOString().slice(0, 10),
-          deadline: form.deadline || "2026-12-31",
-          memberIds: [],
-          leadIds: [],
-          managerIds: [],
-          workflow: {
-            approvalRequired: form.approvalRequired,
-            autoApprove: !form.approvalRequired,
-            approvers: ["Team Lead", "Manager"],
-            adminCanApprove: true,
-            defaultPriority: form.defaultPriority,
-          },
-          createdAt: new Date().toISOString().slice(0, 10),
-        },
-        ...prev,
-      ]);
-      toast.success(`${form.name} created`, {
-        description: "Add members so they can see it in the mobile app.",
-      });
+    if (form.startDate && form.endDate && form.endDate < form.startDate) {
+      toast.error("The end date cannot be before the start date");
+      return;
     }
 
-    setFormOpen(false);
+    setSaving(true);
+    try {
+      if (usingSampleData) {
+        toast.error("Sample data — connect the projects API to save changes.");
+        return;
+      }
+
+      if (editing) {
+        const { message, data } = await updateProject(editing.id, {
+          name: form.name,
+          code: form.code || undefined,
+          description: form.description,
+          startDate: form.startDate || undefined,
+          endDate: form.endDate || undefined,
+          priority: form.priority.toLowerCase(),
+          tags: parseTags(),
+        });
+
+        const updated = data?.project ? toProject(data.project) : null;
+        setList((prev) =>
+          prev.map((project) =>
+            project.id === editing.id
+              ? (updated ?? { ...project, name: form.name })
+              : project,
+          ),
+        );
+        toast.success(message || `${form.name} updated`);
+      } else {
+        const { message, data } = await createProject({
+          name: form.name,
+          code: form.code || undefined,
+          description: form.description || undefined,
+          startDate: form.startDate || undefined,
+          endDate: form.endDate || undefined,
+          priority: form.priority.toLowerCase(),
+          tags: parseTags(),
+          workflow: {
+            requireTaskApproval: form.requireTaskApproval,
+            defaultPriority: form.defaultPriority.toLowerCase(),
+          },
+        });
+
+        if (data?.project) setList((prev) => [toProject(data.project), ...prev]);
+        setTotal((count) => count + 1);
+        toast.success(message || `${form.name} created`, {
+          description: "Add members so they can see it in the mobile app.",
+        });
+      }
+
+      setFormOpen(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not save the project."));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const setStatus = (project: Project, status: ProjectStatus) => {
+  /** Active / On Hold / Completed go through the status field on PUT. */
+  const setStatus = async (project: Project, next: ProjectStatus) => {
+    if (next === project.status) return;
+    const previous = list;
+
     setList((prev) =>
-      prev.map((p) => (p.id === project.id ? { ...p, status } : p)),
+      prev.map((entry) =>
+        entry.id === project.id ? { ...entry, status: next } : entry,
+      ),
     );
-    toast.success(`${project.name} is now ${status}`);
+
+    if (usingSampleData) {
+      toast.success(`${project.name} is now ${next}`, {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await updateProject(project.id, {
+        status: toApiProjectStatus(next),
+      });
+      toast.success(message || `${project.name} is now ${next}`, {
+        description:
+          next === "Completed" ? "Every member has been notified." : undefined,
+      });
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not change the status."));
+    }
   };
 
-  const confirmDelete = () => {
-    if (!deleteTarget) return;
-    setList((prev) => prev.filter((p) => p.id !== deleteTarget.id));
-    toast.success(`${deleteTarget.name} deleted`);
-    setDeleteTarget(null);
+  const toggleArchive = async (project: Project) => {
+    const archiving = project.status !== "Archived";
+    const previous = list;
+
+    setList((prev) =>
+      prev.map((entry) =>
+        entry.id === project.id
+          ? { ...entry, status: archiving ? "Archived" : "Active" }
+          : entry,
+      ),
+    );
+
+    if (usingSampleData) {
+      toast.success(`${project.name} ${archiving ? "archived" : "restored"}`, {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = archiving
+        ? await archiveProject(project.id)
+        : await unarchiveProject(project.id);
+      toast.success(
+        message || `${project.name} ${archiving ? "archived" : "restored"}`,
+      );
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not change the project."));
+    }
+  };
+
+  const runDelete = async (project: Project, force: boolean) => {
+    if (usingSampleData) {
+      setList((prev) => prev.filter((entry) => entry.id !== project.id));
+      toast.success(`${project.name} deleted`, {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message, data } = await deleteProject(project.id, { force });
+      setList((prev) => prev.filter((entry) => entry.id !== project.id));
+      setTotal((count) => Math.max(0, count - 1));
+
+      const deletedTasks = data?.deletedTasks ?? 0;
+      toast.success(message || `${project.name} deleted`, {
+        description: deletedTasks
+          ? `${deletedTasks} task${deletedTasks === 1 ? "" : "s"} were removed with it.`
+          : undefined,
+      });
+    } catch (error) {
+      // 409 means the project still holds tasks; offer the forced delete.
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        setForceDeleteTarget(project);
+        return;
+      }
+      toast.error(getErrorMessage(error, "Could not delete the project."));
+    }
   };
 
   return (
@@ -214,10 +407,17 @@ export default function ProjectsPage() {
         }
       />
 
+      {usingSampleData && (
+        <SampleDataNotice
+          message="Could not reach the projects API — showing sample data. Changes will not be saved."
+          onRetry={refresh}
+        />
+      )}
+
       <StatGrid>
         <StatTile
           label="All Projects"
-          value={list.length}
+          value={total || list.length}
           icon={FolderKanban}
         />
         <StatTile
@@ -256,19 +456,25 @@ export default function ProjectsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
-            {PROJECT_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
+            {PROJECT_STATUSES.map((status) => (
+              <SelectItem key={status} value={status}>
+                {status}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <span className="ml-auto text-xs text-muted-foreground">
-          {visible.length} of {list.length}
+          {visible.length} of {total || visible.length}
         </span>
       </div>
 
-      {visible.length === 0 ? (
+      {loading ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      ) : visible.length === 0 ? (
         <EmptyState
           title="No projects match"
           description="Adjust the filters, or create a new project."
@@ -281,7 +487,7 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visible.map((project) => {
-            const totals = totalsOf(project.id);
+            const stats = statsFor(project);
             return (
               <Card key={project.id} className="flex flex-col">
                 <CardHeader>
@@ -296,7 +502,7 @@ export default function ProjectsPage() {
                         </Link>
                       </CardTitle>
                       <CardDescription className="font-mono text-xs">
-                        {project.key}
+                        {project.code}
                       </CardDescription>
                     </div>
                     <DropdownMenu>
@@ -320,19 +526,33 @@ export default function ProjectsPage() {
                         <DropdownMenuItem onSelect={() => openEdit(project)}>
                           Edit project
                         </DropdownMenuItem>
-                        {project.status !== "Archived" ? (
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                          Set status
+                        </DropdownMenuLabel>
+                        {/*
+                          Archived is excluded here: it has its own endpoints
+                          rather than going through the status field.
+                        */}
+                        {PROJECT_STATUSES.filter(
+                          (status) =>
+                            status !== "Archived" && status !== project.status,
+                        ).map((status) => (
                           <DropdownMenuItem
-                            onSelect={() => setStatus(project, "Archived")}
+                            key={status}
+                            onSelect={() => setStatus(project, status)}
                           >
-                            Archive project
+                            {status}
                           </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            onSelect={() => setStatus(project, "Active")}
-                          >
-                            Restore project
-                          </DropdownMenuItem>
-                        )}
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onSelect={() => toggleArchive(project)}
+                        >
+                          {project.status === "Archived"
+                            ? "Restore project"
+                            : "Archive project"}
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           variant="destructive"
@@ -347,12 +567,12 @@ export default function ProjectsPage() {
 
                 <CardContent className="flex flex-1 flex-col gap-4">
                   <p className="line-clamp-2 text-sm text-muted-foreground">
-                    {project.description}
+                    {project.description || "No description yet."}
                   </p>
 
                   <Meter
-                    value={rateOf(project.id)}
-                    label={`${totals?.completed ?? 0} of ${totals?.total ?? 0} tasks complete`}
+                    value={stats.completionPercentage}
+                    label={`${stats.completed} of ${stats.total} tasks complete`}
                   />
 
                   <dl className="grid grid-cols-3 gap-2 text-center">
@@ -361,36 +581,41 @@ export default function ProjectsPage() {
                         Open
                       </dt>
                       <dd className="text-sm font-semibold tabular-nums">
-                        {totals?.pending ?? 0}
+                        {stats.remaining}
                       </dd>
                     </div>
                     <div className="rounded-lg border py-2">
                       <dt className="text-[0.65rem] text-muted-foreground">
-                        Overdue
+                        In progress
                       </dt>
                       <dd className="text-sm font-semibold tabular-nums">
-                        {totals?.overdue ?? 0}
+                        {stats.inProgress}
                       </dd>
                     </div>
                     <div className="rounded-lg border py-2">
                       <dt className="text-[0.65rem] text-muted-foreground">
-                        Blocked
+                        Approval
                       </dt>
                       <dd className="text-sm font-semibold tabular-nums">
-                        {totals?.blocked ?? 0}
+                        {stats.pendingApproval}
                       </dd>
                     </div>
                   </dl>
 
-                  <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-                    <AvatarStack employeeIds={project.memberIds} />
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
                     <ProjectStatusBadge status={project.status} />
+                    <PriorityBadge priority={project.priority} />
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {project.memberIds.length} members
+                    </span>
                   </div>
 
-                  <p className="text-xs text-muted-foreground">
-                    Deadline {formatDate(project.deadline)} ·{" "}
-                    {relativeToToday(project.deadline)}
-                  </p>
+                  {project.deadline && (
+                    <p className="text-xs text-muted-foreground">
+                      Due {formatDate(project.deadline)} ·{" "}
+                      {relativeToToday(project.deadline)}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -400,7 +625,7 @@ export default function ProjectsPage() {
 
       {/* Create / edit */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editing ? `Edit ${editing.name}` : "Create project"}
@@ -415,7 +640,9 @@ export default function ProjectsPage() {
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="project-name">Project name</Label>
+                <Label htmlFor="project-name">
+                  Project name <span className="text-(--viz-critical)">*</span>
+                </Label>
                 <Input
                   id="project-name"
                   value={form.name}
@@ -424,15 +651,15 @@ export default function ProjectsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="project-key">Key</Label>
+                <Label htmlFor="project-code">Code</Label>
                 <Input
-                  id="project-key"
-                  value={form.key}
+                  id="project-code"
+                  value={form.code}
                   onChange={(e) =>
-                    setForm({ ...form, key: e.target.value.toUpperCase() })
+                    setForm({ ...form, code: e.target.value.toUpperCase() })
                   }
                   placeholder="MOB"
-                  maxLength={5}
+                  maxLength={8}
                 />
               </div>
             </div>
@@ -452,63 +679,116 @@ export default function ProjectsPage() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="project-deadline">Deadline</Label>
+                <Label htmlFor="project-start">Start date</Label>
                 <Input
-                  id="project-deadline"
+                  id="project-start"
                   type="date"
-                  value={form.deadline}
+                  value={form.startDate}
                   onChange={(e) =>
-                    setForm({ ...form, deadline: e.target.value })
+                    setForm({ ...form, startDate: e.target.value })
                   }
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="project-priority">Default priority</Label>
+                <Label htmlFor="project-end">End date</Label>
+                <Input
+                  id="project-end"
+                  type="date"
+                  value={form.endDate}
+                  onChange={(e) =>
+                    setForm({ ...form, endDate: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="project-priority">Project priority</Label>
                 <Select
-                  value={form.defaultPriority}
+                  value={form.priority}
                   onValueChange={(v) =>
-                    setForm({ ...form, defaultPriority: v as Priority })
+                    setForm({ ...form, priority: v as Priority })
                   }
                 >
                   <SelectTrigger id="project-priority" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {PRIORITIES.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
+                    {PRIORITIES.map((priority) => (
+                      <SelectItem key={priority} value={priority}>
+                        {priority}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="project-tags">Tags</Label>
+                <Input
+                  id="project-tags"
+                  value={form.tags}
+                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                  placeholder="mobile, q3"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Comma separated.
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="project-approval">Task approval</Label>
-              <Select
-                value={form.approvalRequired ? "required" : "auto"}
-                onValueChange={(v) =>
-                  setForm({ ...form, approvalRequired: v === "required" })
-                }
-              >
-                <SelectTrigger id="project-approval" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="required">
-                    Approval required before a task starts
-                  </SelectItem>
-                  <SelectItem value="auto">
-                    Auto-approve — tasks start immediately
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Fine-grained approver rules live on the project&apos;s Workflow
-                tab.
-              </p>
-            </div>
+            {!editing && (
+              <div className="space-y-3 rounded-lg border p-3">
+                <p className="text-sm font-medium">Workflow</p>
+                <div className="flex items-start justify-between gap-4">
+                  <Label
+                    htmlFor="project-approval"
+                    className="text-sm font-normal"
+                  >
+                    Require task approval
+                    <span className="block text-xs text-muted-foreground">
+                      Tasks wait for an approver before they can close.
+                    </span>
+                  </Label>
+                  <Switch
+                    id="project-approval"
+                    checked={form.requireTaskApproval}
+                    onCheckedChange={(checked) =>
+                      setForm({ ...form, requireTaskApproval: checked })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="project-default-priority">
+                    Default task priority
+                  </Label>
+                  <Select
+                    value={form.defaultPriority}
+                    onValueChange={(v) =>
+                      setForm({ ...form, defaultPriority: v as Priority })
+                    }
+                  >
+                    <SelectTrigger
+                      id="project-default-priority"
+                      className="w-full"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORITIES.map((priority) => (
+                        <SelectItem key={priority} value={priority}>
+                          {priority}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The remaining workflow rules live on the project&apos;s
+                  Workflow tab.
+                </p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -518,8 +798,13 @@ export default function ProjectsPage() {
             <Button
               className="bg-[#2d5a4c] hover:bg-[#234539]"
               onClick={submitForm}
+              disabled={saving}
             >
-              {editing ? "Save changes" : "Create project"}
+              {saving
+                ? "Saving…"
+                : editing
+                  ? "Save changes"
+                  : "Create project"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -534,17 +819,53 @@ export default function ProjectsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the project and every task inside it. Archive it
-              instead if you only want it out of the way.
+              This permanently removes the project. If it still has tasks you
+              will be asked to confirm those too. Archive it instead if you only
+              want it out of the way.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-[var(--viz-critical)] text-white hover:bg-[var(--viz-critical)]/90"
-              onClick={confirmDelete}
+              className="bg-(--viz-critical) text-white hover:bg-(--viz-critical)/90"
+              onClick={() => {
+                const target = deleteTarget;
+                setDeleteTarget(null);
+                if (target) runDelete(target, false);
+              }}
             >
               Delete project
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Forced delete — the server refused because tasks remain */}
+      <AlertDialog
+        open={forceDeleteTarget !== null}
+        onOpenChange={(open) => !open && setForceDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {forceDeleteTarget?.name} still has tasks
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The server refused to delete it while tasks remain. Deleting
+              anyway also removes every task in the project.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep the project</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-(--viz-critical) text-white hover:bg-(--viz-critical)/90"
+              onClick={() => {
+                const target = forceDeleteTarget;
+                setForceDeleteTarget(null);
+                if (target) runDelete(target, true);
+              }}
+            >
+              Delete project and tasks
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

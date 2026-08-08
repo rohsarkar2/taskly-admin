@@ -24,61 +24,146 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import * as React from "react";
 import { HBarChart, StackedBar } from "@/components/charts/bar-chart";
 import { LineChart } from "@/components/charts/line-chart";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  AvatarStack,
   EmployeeStatusBadge,
+  EmptyState,
   PageHeader,
   PersonCell,
   PriorityBadge,
   ProgressCell,
+  SampleDataNotice,
   StatGrid,
   StatTile,
   TaskStatusBadge,
 } from "@/components/dashboard/ui-bits";
 import {
+  toActivityLogs,
+  toEmployees,
+  toTasks,
+} from "@/lib/api/adapters";
+import { getAnalyticsOverview, getProjectAnalytics, getTaskAnalytics } from "@/lib/api/analytics";
+import type { AnalyticsOverviewData, ProjectAnalyticsRow, TrendPoint } from "@/lib/api/analytics";
+import { listRecentActivity } from "@/lib/api/activity";
+import { listPendingEmployees } from "@/lib/api/employees";
+import { listTasks } from "@/lib/api/tasks";
+import {
   formatDate,
-  isOverdue,
-  monthlyTaskVolume,
-  organizationOverview,
-  organizationSettings,
-  pendingApprovalTasks,
-  pendingEmployees,
-  projectById,
-  projectPerformance,
-  projectNameOf,
+  formatDateTime,
+  formatShortDate,
   relativeToToday,
-  tasks,
-  activityLogs,
 } from "@/lib/mock-data";
+import { useAppSelector } from "@/lib/redux/hooks";
+import type { ActivityLog, Employee, Task } from "@/lib/types";
+
+const TREND_DAYS = 30;
 
 export default function DashboardPage() {
-  const overview = organizationOverview();
-  const projectStats = projectPerformance().filter(
-    (p) => p.status === "Active" || p.status === "On Hold",
-  );
+  const organization = useAppSelector((state) => state.user.organization);
 
-  const recentTasks = [...tasks]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 6);
+  const [overview, setOverview] = React.useState<AnalyticsOverviewData | null>(
+    null,
+  );
+  const [projectRows, setProjectRows] = React.useState<ProjectAnalyticsRow[]>(
+    [],
+  );
+  const [trend, setTrend] = React.useState<TrendPoint[]>([]);
+  const [recentTasks, setRecentTasks] = React.useState<Task[]>([]);
+  const [pending, setPending] = React.useState<Employee[]>([]);
+  const [activity, setActivity] = React.useState<ActivityLog[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [unavailable, setUnavailable] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
+
+  React.useEffect(() => {
+    const signal = { cancelled: false };
+
+    const load = async () => {
+      try {
+        // Only the overview is required; the panels below it each degrade on
+        // their own so one slow endpoint does not blank the dashboard.
+        const [head, projects, tasksTrend, latest, pendingList, logs] =
+          await Promise.all([
+            getAnalyticsOverview(),
+            getProjectAnalytics({ limit: 20 }).catch(() => null),
+            getTaskAnalytics({ days: TREND_DAYS }).catch(() => null),
+            listTasks({ limit: 6, sortBy: "createdAt", sortOrder: "desc" }).catch(
+              () => null,
+            ),
+            listPendingEmployees().catch(() => null),
+            listRecentActivity({ limit: 8 }).catch(() => null),
+          ]);
+        if (signal.cancelled) return;
+
+        setOverview(head.data);
+        setProjectRows(projects?.data.projects ?? []);
+        setTrend(tasksTrend?.data.trend ?? []);
+        setRecentTasks(latest ? toTasks(latest.items) : []);
+        setPending(pendingList ? toEmployees(pendingList.items) : []);
+        setActivity(logs ? toActivityLogs(logs.items) : []);
+        setUnavailable(false);
+      } catch (error) {
+        if (signal.cancelled) return;
+        console.error("Failed to load the dashboard:", error);
+        setUnavailable(true);
+      } finally {
+        if (!signal.cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const refresh = () => {
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
+
+  if (loading) return <DashboardSkeleton />;
+
+  if (unavailable || !overview) {
+    return (
+      <>
+        <PageHeader title="Dashboard" description={organization?.name ?? ""} />
+        <SampleDataNotice
+          message="Could not reach the analytics API."
+          onRetry={refresh}
+        />
+        <EmptyState
+          title="Dashboard unavailable"
+          description="Every figure here is computed server-side, so there is nothing to show until it responds."
+        />
+      </>
+    );
+  }
+
+  const { employees, projects: projectCounts, tasks } = overview;
+  const openProjects = projectRows.filter(
+    (row) => row.status !== "archived" && row.status !== "completed",
+  );
 
   /** Things the admin has to act on before anything else on this page. */
   const actionItems = [
     {
-      count: pendingEmployees.length,
+      count: employees.pendingEmployees,
       label: "employees waiting for approval",
       href: "/dashboard/requests",
       cta: "Review requests",
     },
     {
-      count: pendingApprovalTasks.length,
+      count: tasks.pendingApproval,
       label: "tasks waiting for your decision",
       href: "/dashboard/approvals",
       cta: "Open approval center",
     },
     {
-      count: overview.overdue,
+      count: tasks.overdue,
       label: "tasks past their due date",
       href: "/dashboard/tasks?status=overdue",
       cta: "View overdue tasks",
@@ -89,7 +174,11 @@ export default function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        description={`${organizationSettings.name} · ${organizationSettings.uniqueOrganizationId}`}
+        description={
+          organization
+            ? `${organization.name} · ${organization.uniqueOrganizationId}`
+            : "Organization overview"
+        }
         action={
           <>
             <Button variant="outline" size="sm" asChild>
@@ -125,31 +214,31 @@ export default function DashboardPage() {
       <StatGrid>
         <StatTile
           label="Total Employees"
-          value={overview.totalEmployees}
-          hint={`${overview.activeEmployees} active · ${overview.pendingEmployees} pending`}
+          value={employees.totalEmployees}
+          hint={`${employees.activeEmployees} active · ${employees.pendingEmployees} pending`}
           icon={Users}
           href="/dashboard/employees"
         />
         <StatTile
           label="Projects"
-          value={overview.totalProjects}
-          hint={`${overview.activeProjects} active · ${overview.completedProjects} completed`}
+          value={projectCounts.totalProjects}
+          hint={`${projectCounts.activeProjects} active · ${projectCounts.completedProjects} completed`}
           icon={FolderKanban}
           accent="var(--viz-3)"
           href="/dashboard/projects"
         />
         <StatTile
           label="Total Tasks"
-          value={overview.totalTasks}
-          hint={`${overview.completed} completed · ${overview.inProgress} in progress`}
+          value={tasks.totalTasks}
+          hint={`${tasks.completed} completed · ${tasks.inProgress} in progress`}
           icon={ClipboardList}
           accent="var(--viz-2)"
           href="/dashboard/tasks"
         />
         <StatTile
           label="Overdue Tasks"
-          value={overview.overdue}
-          hint={`${overview.blocked} blocked · ${overview.pendingApproval} awaiting approval`}
+          value={tasks.overdue}
+          hint={`${tasks.blocked} blocked · ${tasks.pendingApproval} awaiting approval`}
           icon={AlertTriangle}
           accent="var(--viz-critical)"
           href="/dashboard/tasks?status=overdue"
@@ -157,12 +246,11 @@ export default function DashboardPage() {
       </StatGrid>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Organization overview */}
         <Card>
           <CardHeader>
             <CardTitle>Organization overview</CardTitle>
             <CardDescription>
-              Headcount by role across {overview.activeEmployees} active
+              Headcount by role across {employees.activeEmployees} active
               employees.
             </CardDescription>
           </CardHeader>
@@ -170,59 +258,56 @@ export default function DashboardPage() {
             <HBarChart
               tableColumns={["Role", "People"]}
               data={[
-                { label: "Team Members", value: overview.teamMembers },
-                { label: "Team Leads", value: overview.teamLeads },
-                { label: "Managers", value: overview.managers },
+                { label: "Team Members", value: employees.teamMembers },
+                { label: "Team Leads", value: employees.teamLeads },
+                { label: "Managers", value: employees.managers },
               ]}
             />
           </CardContent>
         </Card>
 
-        {/* Task status distribution */}
         <Card>
           <CardHeader>
             <CardTitle>Task status distribution</CardTitle>
             <CardDescription>
-              All {overview.totalTasks} tasks in the organization.
+              All {tasks.totalTasks} tasks in the organization.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <StackedBar
               segments={[
-                { label: "To Do", value: overview.todo },
-                { label: "In Progress", value: overview.inProgress },
-                { label: "Pending Approval", value: overview.pendingApproval },
-                { label: "Blocked", value: overview.blocked },
-                { label: "Completed", value: overview.completed },
-                { label: "Rejected", value: overview.rejected },
+                { label: "To Do", value: tasks.pending },
+                { label: "In Progress", value: tasks.inProgress },
+                { label: "Pending Approval", value: tasks.pendingApproval },
+                { label: "Returned", value: tasks.returned },
+                { label: "Blocked", value: tasks.blocked },
+                { label: "Completed", value: tasks.completed },
               ]}
             />
           </CardContent>
         </Card>
       </div>
 
-      {/* Monthly trend */}
+      {/* Trend */}
       <Card>
         <CardHeader>
           <CardTitle>Tasks created vs completed</CardTitle>
           <CardDescription>
-            Monthly volume for 2026. August is still in progress.
+            Daily volume over the last {TREND_DAYS} days.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <LineChart
-            categories={monthlyTaskVolume.map((m) => m.month)}
-            series={[
-              {
-                label: "Created",
-                values: monthlyTaskVolume.map((m) => m.created),
-              },
-              {
-                label: "Completed",
-                values: monthlyTaskVolume.map((m) => m.completed),
-              },
-            ]}
-          />
+          {trend.length === 0 ? (
+            <EmptyState title="No trend data yet" />
+          ) : (
+            <LineChart
+              categories={trend.map((p) => formatShortDate(p.date))}
+              series={[
+                { label: "Created", values: trend.map((p) => p.created) },
+                { label: "Completed", values: trend.map((p) => p.completed) },
+              ]}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -242,51 +327,55 @@ export default function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Progress</TableHead>
-                  <TableHead className="text-right">Completed</TableHead>
-                  <TableHead className="text-right">Pending</TableHead>
-                  <TableHead className="text-right">Overdue</TableHead>
-                  <TableHead className="text-right">Deadline</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projectStats.map((project) => (
-                  <TableRow key={project.projectId}>
-                    <TableCell>
-                      <Link
-                        href={`/dashboard/projects/${project.projectId}`}
-                        className="font-medium hover:underline"
-                      >
-                        {project.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <ProgressCell value={project.completionRate} />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {project.completed}/{project.total}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {project.pending}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {project.overdue}
-                    </TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground">
-                      {relativeToToday(
-                        projectById(project.projectId)!.deadline,
-                      )}
-                    </TableCell>
+          {openProjects.length === 0 ? (
+            <EmptyState title="No active projects" />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Progress</TableHead>
+                    <TableHead className="text-right">Completed</TableHead>
+                    <TableHead className="text-right">Remaining</TableHead>
+                    <TableHead className="text-right">Overdue</TableHead>
+                    <TableHead className="text-right">Due</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {openProjects.map((project) => (
+                    <TableRow key={project.projectId}>
+                      <TableCell>
+                        <Link
+                          href={`/dashboard/projects/${project.projectId}`}
+                          className="font-medium hover:underline"
+                        >
+                          {project.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <ProgressCell
+                          value={Math.round(project.completionPercentage)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {project.completedTasks}/{project.totalTasks}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {project.remainingTasks}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {project.overdueTasks}
+                      </TableCell>
+                      <TableCell className="text-right text-xs whitespace-nowrap">
+                        {formatDate(project.endDate?.slice(0, 10))}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -302,54 +391,72 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Task</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Assignee</TableHead>
-                    <TableHead className="text-right">Due</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentTasks.map((task) => (
-                    <TableRow key={task.id}>
-                      <TableCell className="max-w-[16rem]">
-                        <Link
-                          href={`/dashboard/tasks/${task.id}`}
-                          className="block truncate font-medium hover:underline"
-                        >
-                          {task.title}
-                        </Link>
-                        <span className="text-xs text-muted-foreground">
-                          {projectNameOf(task.projectId)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <TaskStatusBadge
-                          status={task.status}
-                          overdue={isOverdue(task)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <PriorityBadge priority={task.priority} />
-                      </TableCell>
-                      <TableCell>
-                        <PersonCell
-                          employeeId={task.assigneeId}
-                          href={`/dashboard/employees/${task.assigneeId}`}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right text-xs whitespace-nowrap">
-                        {formatDate(task.dueDate)}
-                      </TableCell>
+            {recentTasks.length === 0 ? (
+              <EmptyState title="No tasks yet" />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Task</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Assignee</TableHead>
+                      <TableHead className="text-right">Due</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {recentTasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell className="max-w-[16rem]">
+                          <Link
+                            href={`/dashboard/tasks/${task.id}`}
+                            className="block truncate font-medium hover:underline"
+                          >
+                            {task.title}
+                          </Link>
+                          <span className="text-xs text-muted-foreground">
+                            {task.projectName ?? "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <TaskStatusBadge status={task.status} />
+                        </TableCell>
+                        <TableCell>
+                          <PriorityBadge priority={task.priority} />
+                        </TableCell>
+                        <TableCell>
+                          {task.assigneeId ? (
+                            <PersonCell
+                              employee={{
+                                id: task.assigneeId,
+                                name:
+                                  task.people?.find(
+                                    (p) => p.id === task.assigneeId,
+                                  )?.name ?? "Unknown",
+                                email: "",
+                                avatarColor:
+                                  task.people?.find(
+                                    (p) => p.id === task.assigneeId,
+                                  )?.avatarColor ?? "#2d5a4c",
+                              }}
+                              href={`/dashboard/employees/${task.assigneeId}`}
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              Unassigned
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right text-xs whitespace-nowrap">
+                          {formatDate(task.dueDate)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -368,23 +475,28 @@ export default function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              {pendingEmployees.length === 0 && (
+              {pending.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No pending registrations.
                 </p>
+              ) : (
+                pending.slice(0, 4).map((employee) => (
+                  <div
+                    key={employee.id}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <PersonCell
+                      employee={employee}
+                      subtitle={
+                        employee.registeredAt
+                          ? `Registered ${relativeToToday(employee.registeredAt)}`
+                          : undefined
+                      }
+                    />
+                    <EmployeeStatusBadge status={employee.status} />
+                  </div>
+                ))
               )}
-              {pendingEmployees.slice(0, 4).map((employee) => (
-                <div
-                  key={employee.id}
-                  className="flex items-center justify-between gap-2"
-                >
-                  <PersonCell
-                    employeeId={employee.id}
-                    subtitle={`Registered ${relativeToToday(employee.registeredAt)}`}
-                  />
-                  <EmployeeStatusBadge status={employee.status} />
-                </div>
-              ))}
             </CardContent>
           </Card>
 
@@ -398,48 +510,48 @@ export default function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-3">
-                {activityLogs.slice(0, 6).map((log) => (
-                  <li key={log.id} className="text-xs">
-                    <span className="font-medium">{log.actor}</span>{" "}
-                    <span className="text-muted-foreground">{log.message}</span>
-                    <span className="block text-[0.65rem] text-muted-foreground">
-                      {formatDate(log.at)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              {activity.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No activity recorded yet.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {activity.map((log) => (
+                    <li key={log.id} className="text-xs">
+                      <span className="font-medium">{log.actor}</span>{" "}
+                      <span className="text-muted-foreground">
+                        {log.message}
+                      </span>
+                      <span className="block text-[0.65rem] text-muted-foreground">
+                        {formatDateTime(log.at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
-
-      {/* Team on active projects */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Teams on active projects</CardTitle>
-          <CardDescription>
-            Only assigned members can open a project from the mobile app.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projectStats.map((project) => (
-            <Link
-              key={project.projectId}
-              href={`/dashboard/projects/${project.projectId}`}
-              className="rounded-lg border p-3 transition-colors hover:border-foreground/20"
-            >
-              <p className="text-sm font-medium">{project.name}</p>
-              <p className="mb-2 text-xs text-muted-foreground">
-                {project.members} members · {project.pending} open tasks
-              </p>
-              <AvatarStack
-                employeeIds={projectById(project.projectId)?.memberIds ?? []}
-              />
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
     </>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <Skeleton className="h-10 w-64" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+      <Skeleton className="h-72 w-full" />
+    </div>
   );
 }

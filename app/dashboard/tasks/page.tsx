@@ -3,7 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Clock, ListTodo, MoreHorizontal } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  ListTodo,
+  MoreHorizontal,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -62,23 +68,42 @@ import {
   PageHeader,
   PersonCell,
   PriorityBadge,
+  SampleDataNotice,
   StatGrid,
   StatTile,
   TaskStatusBadge,
 } from "@/components/dashboard/ui-bits";
+import { getErrorMessage } from "@/lib/api/auth";
 import {
-  activeEmployees,
+  toApiTaskStatus,
+  toEmployees,
+  toProjects,
+  toTasks,
+} from "@/lib/api/adapters";
+import { listEmployees } from "@/lib/api/employees";
+import { listProjects } from "@/lib/api/projects";
+import {
+  deleteTask,
+  listTasks,
+  reassignTask,
+  updateTaskStatus,
+} from "@/lib/api/tasks";
+import {
+  REFERENCE_TODAY,
+  activeEmployees as seedActiveEmployees,
   employeeById,
   formatDate,
   isOverdue,
-  projects,
+  projects as seedProjects,
   projectNameOf,
   tasks as seedTasks,
 } from "@/lib/mock-data";
 import {
   PRIORITIES,
-  TASK_STATUSES,
+  SETTABLE_TASK_STATUSES,
+  type Employee,
   type Priority,
+  type Project,
   type Task,
   type TaskStatus,
 } from "@/lib/types";
@@ -113,7 +138,14 @@ const PRIORITY_RANK: Record<Priority, number> = {
 function TasksView() {
   const searchParams = useSearchParams();
 
-  const [list, setList] = React.useState<Task[]>(seedTasks);
+  const [list, setList] = React.useState<Task[]>([]);
+  const [projectOptions, setProjectOptions] = React.useState<Project[]>([]);
+  const [assigneeOptions, setAssigneeOptions] = React.useState<Employee[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [usingSampleData, setUsingSampleData] = React.useState(false);
+  const [total, setTotal] = React.useState(0);
+  const [reloadKey, setReloadKey] = React.useState(0);
+
   const [query, setQuery] = React.useState("");
   const [projectFilter, setProjectFilter] = React.useState(
     searchParams.get("project") ?? "all",
@@ -129,34 +161,137 @@ function TasksView() {
   const [nextAssignee, setNextAssignee] = React.useState("");
   const [deleteTarget, setDeleteTarget] = React.useState<Task | null>(null);
 
-  const visible = React.useMemo(() => {
-    const filtered = list.filter((task) => {
-      if (projectFilter !== "all" && task.projectId !== projectFilter)
-        return false;
-      if (statusFilter === "overdue") {
-        if (!isOverdue(task)) return false;
-      } else if (statusFilter !== "all" && task.status !== statusFilter) {
-        return false;
-      }
-      if (assigneeFilter !== "all" && task.assigneeId !== assigneeFilter)
-        return false;
-      if (priorityFilter !== "all" && task.priority !== priorityFilter)
-        return false;
+  /**
+   * Filtering, sorting and the overdue flag are all the server's job, so the
+   * fetch re-runs whenever they change — debounced, since `query` updates on
+   * every keystroke.
+   */
+  React.useEffect(() => {
+    const signal = { cancelled: false };
 
-      const haystack = `${task.title} ${task.id} ${projectNameOf(task.projectId)} ${
-        employeeById(task.assigneeId)?.name ?? ""
-      }`.toLowerCase();
-      return haystack.includes(query.toLowerCase());
-    });
+    const timer = setTimeout(
+      () => {
+        setLoading(true);
+
+        const load = async () => {
+          try {
+            const [result, projectList, employeeList] = await Promise.all([
+              listTasks({
+                search: query || undefined,
+                // `overdue` is its own flag rather than a status value.
+                status:
+                  statusFilter === "overdue" || statusFilter === "all"
+                    ? undefined
+                    : toApiTaskStatus(statusFilter as TaskStatus),
+                overdue: statusFilter === "overdue" || undefined,
+                projectId: projectFilter,
+                assignee: assigneeFilter,
+                priority:
+                  priorityFilter === "all"
+                    ? undefined
+                    : priorityFilter.toLowerCase(),
+                sortBy: sortBy === "createdAt" ? "createdAt" : sortBy,
+                sortOrder: sortBy === "createdAt" ? "desc" : "asc",
+                limit: 100,
+              }),
+              listProjects({ limit: 100 }).catch(() => null),
+              listEmployees({ status: "Active", limit: 200 }).catch(() => null),
+            ]);
+            if (signal.cancelled) return;
+
+            setList(toTasks(result.items));
+            setTotal(result.total);
+            setProjectOptions(
+              projectList ? toProjects(projectList.items) : seedProjects,
+            );
+            setAssigneeOptions(
+              employeeList
+                ? toEmployees(employeeList.items)
+                : seedActiveEmployees,
+            );
+            setUsingSampleData(false);
+          } catch (error) {
+            if (signal.cancelled) return;
+            console.error("Failed to load tasks:", error);
+            setList(seedTasks);
+            setTotal(seedTasks.length);
+            setProjectOptions(seedProjects);
+            setAssigneeOptions(seedActiveEmployees);
+            setUsingSampleData(true);
+          } finally {
+            if (!signal.cancelled) setLoading(false);
+          }
+        };
+
+        load();
+      },
+      query ? 300 : 0,
+    );
+
+    return () => {
+      signal.cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    query,
+    statusFilter,
+    projectFilter,
+    assigneeFilter,
+    priorityFilter,
+    sortBy,
+    reloadKey,
+  ]);
+
+  const refresh = () => setReloadKey((key) => key + 1);
+
+  /** A task is overdue when it is past due and not in a terminal state. */
+  const taskIsOverdue = (task: Task) => {
+    if (!task.dueDate) return false;
+    if (task.status === "Completed" || task.status === "Rejected") return false;
+    return task.dueDate < REFERENCE_TODAY;
+  };
+
+  const nameOfAssignee = (task: Task) =>
+    (task.assigneeId
+      ? (task.people?.find((person) => person.id === task.assigneeId)?.name ??
+        assigneeOptions.find((employee) => employee.id === task.assigneeId)
+          ?.name ??
+        employeeById(task.assigneeId)?.name)
+      : undefined) ?? "";
+
+  // The server already applied the filters; sample mode has to do it locally.
+  const visible = React.useMemo(() => {
+    const filtered = usingSampleData
+      ? list.filter((task) => {
+          if (projectFilter !== "all" && task.projectId !== projectFilter)
+            return false;
+          if (statusFilter === "overdue") {
+            if (!isOverdue(task)) return false;
+          } else if (statusFilter !== "all" && task.status !== statusFilter) {
+            return false;
+          }
+          if (assigneeFilter !== "all" && task.assigneeId !== assigneeFilter)
+            return false;
+          if (priorityFilter !== "all" && task.priority !== priorityFilter)
+            return false;
+
+          const haystack =
+            `${task.title} ${task.id} ${task.projectName ?? projectNameOf(task.projectId)} ${nameOfAssignee(task)}`.toLowerCase();
+          return haystack.includes(query.toLowerCase());
+        })
+      : [...list];
 
     return filtered.sort((a, b) => {
       if (sortBy === "priority")
         return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
       if (sortBy === "createdAt") return b.createdAt.localeCompare(a.createdAt);
-      return a.dueDate.localeCompare(b.dueDate);
+      // Tasks with no due date sort last rather than crashing the comparator.
+      return (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     list,
+    usingSampleData,
     projectFilter,
     statusFilter,
     assigneeFilter,
@@ -165,7 +300,9 @@ function TasksView() {
     sortBy,
   ]);
 
-  const overdueCount = list.filter(isOverdue).length;
+  console.log(visible);
+
+  const overdueCount = list.filter(taskIsOverdue).length;
 
   const clearFilters = () => {
     setQuery("");
@@ -182,32 +319,87 @@ function TasksView() {
     assigneeFilter !== "all" ||
     priorityFilter !== "all";
 
-  const confirmReassign = () => {
+  const confirmReassign = async () => {
     if (!reassignTarget || !nextAssignee) return;
+
+    const target = reassignTarget;
+    const previous = list;
+    const assignee = nextAssignee === "none" ? null : nextAssignee;
+    const name =
+      assigneeOptions.find((employee) => employee.id === assignee)?.name ??
+      "employee";
+
     setList((prev) =>
       prev.map((t) =>
-        t.id === reassignTarget.id ? { ...t, assigneeId: nextAssignee } : t,
+        t.id === target.id ? { ...t, assigneeId: assignee } : t,
       ),
-    );
-    toast.success(
-      `Reassigned to ${employeeById(nextAssignee)?.name ?? "employee"}`,
     );
     setReassignTarget(null);
     setNextAssignee("");
+
+    if (usingSampleData) {
+      toast.success(assignee ? `Reassigned to ${name}` : "Task unassigned", {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await reassignTask(target.id, assignee);
+      toast.success(
+        message || (assignee ? `Reassigned to ${name}` : "Task unassigned"),
+      );
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not reassign the task."));
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    setList((prev) => prev.filter((t) => t.id !== deleteTarget.id));
-    toast.success("Task deleted");
+
+    const target = deleteTarget;
+    const previous = list;
+    setList((prev) => prev.filter((t) => t.id !== target.id));
     setDeleteTarget(null);
+
+    if (usingSampleData) {
+      toast.success("Task deleted", {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await deleteTask(target.id);
+      setTotal((count) => Math.max(0, count - 1));
+      toast.success(message || "Task deleted");
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not delete the task."));
+    }
   };
 
-  const changeStatus = (task: Task, status: TaskStatus) => {
+  const changeStatus = async (task: Task, status: TaskStatus) => {
+    const previous = list;
     setList((prev) =>
       prev.map((t) => (t.id === task.id ? { ...t, status } : t)),
     );
-    toast.success(`Task moved to ${status}`);
+
+    if (usingSampleData) {
+      toast.success(`Task moved to ${status}`, {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await updateTaskStatus(task.id, status);
+      toast.success(message || `Task moved to ${status}`);
+    } catch (error) {
+      setList(previous);
+      toast.error(getErrorMessage(error, "Could not update the task."));
+    }
   };
 
   return (
@@ -217,8 +409,19 @@ function TasksView() {
         description="Every task in the organization, across all projects and employees."
       />
 
+      {usingSampleData && (
+        <SampleDataNotice
+          message="Could not reach the tasks API — showing sample data. Changes will not be saved."
+          onRetry={refresh}
+        />
+      )}
+
       <StatGrid>
-        <StatTile label="All Tasks" value={list.length} icon={ListTodo} />
+        <StatTile
+          label="All Tasks"
+          value={total || list.length}
+          icon={ListTodo}
+        />
         <StatTile
           label="In Progress"
           value={list.filter((t) => t.status === "In Progress").length}
@@ -262,7 +465,7 @@ function TasksView() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All projects</SelectItem>
-                {projects.map((project) => (
+                {projectOptions.map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     {project.name}
                   </SelectItem>
@@ -277,7 +480,7 @@ function TasksView() {
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="overdue">Overdue</SelectItem>
-                {TASK_STATUSES.map((status) => (
+                {SETTABLE_TASK_STATUSES.map((status) => (
                   <SelectItem key={status} value={status}>
                     {status}
                   </SelectItem>
@@ -291,7 +494,8 @@ function TasksView() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All employees</SelectItem>
-                {activeEmployees.map((employee) => (
+                <SelectItem value="none">Unassigned</SelectItem>
+                {assigneeOptions.map((employee) => (
                   <SelectItem key={employee.id} value={employee.id}>
                     {employee.name}
                   </SelectItem>
@@ -334,11 +538,18 @@ function TasksView() {
             )}
 
             <span className="ml-auto text-xs text-muted-foreground">
-              {visible.length} of {list.length}
+              {visible.length} of {total || visible.length}
             </span>
           </div>
 
-          {visible.length === 0 ? (
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : visible.length === 0 ? (
             <EmptyState
               title="No tasks match these filters"
               description="Try widening the project, status or priority filters."
@@ -369,32 +580,50 @@ function TasksView() {
                       <TableCell className="max-w-[18rem]">
                         <Link
                           href={`/dashboard/tasks/${task.id}`}
-                          className="block truncate font-medium hover:underline"
+                          className="block truncate font-medium *:hover:**:text-[#234539] text-[#2d5a4c]"
                         >
                           {task.title}
                         </Link>
-                        <span className="font-mono text-xs text-muted-foreground">
+                        {/* <span className="font-mono text-xs text-muted-foreground">
                           {task.id}
-                        </span>
+                        </span> */}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {projectNameOf(task.projectId)}
+                        {task.projectName ?? projectNameOf(task.projectId)}
                       </TableCell>
                       <TableCell>
-                        <PersonCell
-                          employeeId={task.assigneeId}
-                          href={`/dashboard/employees/${task.assigneeId}`}
-                        />
+                        {task.assigneeId ? (
+                          <PersonCell
+                            employee={{
+                              id: task.assigneeId,
+                              name: nameOfAssignee(task) || "Unknown",
+                              email: "",
+                              avatarColor:
+                                task.people?.find(
+                                  (person) => person.id === task.assigneeId,
+                                )?.avatarColor ?? "#2d5a4c",
+                            }}
+                            href={`/dashboard/employees/${task.assigneeId}`}
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Unassigned
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
-                        {task.approverId
-                          ? (employeeById(task.approverId)?.name ?? "—")
+                        {task.approverIds?.length
+                          ? (task.people?.find(
+                              (person) => person.id === task.approverId,
+                            )?.name ??
+                            employeeById(task.approverId ?? "")?.name ??
+                            `${task.approverIds.length} approver(s)`)
                           : "Not required"}
                       </TableCell>
                       <TableCell>
                         <TaskStatusBadge
                           status={task.status}
-                          overdue={isOverdue(task)}
+                          overdue={taskIsOverdue(task)}
                         />
                       </TableCell>
                       <TableCell>
@@ -425,25 +654,25 @@ function TasksView() {
                             <DropdownMenuItem
                               onSelect={() => {
                                 setReassignTarget(task);
-                                setNextAssignee(task.assigneeId);
+                                setNextAssignee(task.assigneeId ?? "none");
                               }}
                             >
                               Reassign
                             </DropdownMenuItem>
                             {task.status !== "Completed" && (
                               <DropdownMenuItem
-                                onSelect={() =>
-                                  changeStatus(task, "Completed")
-                                }
+                                onSelect={() => changeStatus(task, "Completed")}
                               >
                                 Mark completed
                               </DropdownMenuItem>
                             )}
-                            {task.status !== "Blocked" && (
+                            {task.status !== "In Progress" && (
                               <DropdownMenuItem
-                                onSelect={() => changeStatus(task, "Blocked")}
+                                onSelect={() =>
+                                  changeStatus(task, "In Progress")
+                                }
                               >
-                                Mark blocked
+                                Mark in progress
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuSeparator />
@@ -485,7 +714,8 @@ function TasksView() {
                 <SelectValue placeholder="Select an employee" />
               </SelectTrigger>
               <SelectContent>
-                {activeEmployees.map((employee) => (
+                <SelectItem value="none">Unassigned</SelectItem>
+                {assigneeOptions.map((employee) => (
                   <SelectItem key={employee.id} value={employee.id}>
                     {employee.name} — {employee.role}
                   </SelectItem>

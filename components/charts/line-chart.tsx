@@ -56,6 +56,15 @@ export function LineChart({
 
   const ticks = [0, 1, 2, 3, 4].map((t) => t * step);
 
+  /**
+   * Draw roughly eight tick labels however many points there are.
+   *
+   * Thinning happens here rather than at the call site: blanking the incoming
+   * categories would also blank the tooltip and the table view, and would give
+   * several entries the same empty key.
+   */
+  const labelEvery = Math.max(1, Math.ceil(categories.length / 8));
+
   const handleMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const ratio = (event.clientX - rect.left) / rect.width;
@@ -106,19 +115,21 @@ export function LineChart({
             </g>
           ))}
 
-          {/* Category labels */}
-          {categories.map((c, i) => (
-            <text
-              key={c}
-              x={x(i)}
-              y={VB_H - 8}
-              textAnchor="middle"
-              fontSize={13}
-              fill="var(--viz-muted-ink)"
-            >
-              {c}
-            </text>
-          ))}
+          {/* Category labels — thinned so they never overlap */}
+          {categories.map((c, i) =>
+            i % labelEvery === 0 || i === categories.length - 1 ? (
+              <text
+                key={i}
+                x={x(i)}
+                y={VB_H - 8}
+                textAnchor="middle"
+                fontSize={13}
+                fill="var(--viz-muted-ink)"
+              >
+                {c}
+              </text>
+            ) : null,
+          )}
 
           {/* Crosshair */}
           {hover !== null && (
@@ -143,7 +154,7 @@ export function LineChart({
             const lastIdx = s.values.length - 1;
 
             return (
-              <g key={s.label}>
+              <g key={si}>
                 <path
                   d={path}
                   fill="none"

@@ -29,24 +29,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   EmptyState,
   PageHeader,
   PersonCell,
   PriorityBadge,
+  SampleDataNotice,
   StatGrid,
   StatTile,
 } from "@/components/dashboard/ui-bits";
+import { getErrorMessage } from "@/lib/api/auth";
+import { toProjects, toTasks } from "@/lib/api/adapters";
+import { listProjects } from "@/lib/api/projects";
 import {
+  approveTask,
+  listPendingApprovals,
+  rejectTask,
+  returnTask,
+} from "@/lib/api/tasks";
+import {
+  REFERENCE_TODAY,
   employeeById,
   formatDate,
-  isOverdue,
-  projectById,
-  projects,
+  projectNameOf,
+  projects as seedProjects,
   relativeToToday,
   tasks as seedTasks,
 } from "@/lib/mock-data";
-import type { Task } from "@/lib/types";
+import type { Project, Task } from "@/lib/types";
 
 type Verdict = "approve" | "reject" | "return";
 
@@ -68,16 +79,18 @@ const VERDICT_COPY: Record<
   },
   return: {
     title: "Return for changes",
-    body: "The task goes back to In Progress with your comment attached.",
+    body: "The task goes back to the assignee as Returned, so they can rework and resubmit it.",
     cta: "Return task",
     needsComment: true,
   },
 };
 
 export default function ApprovalsPage() {
-  const [queue, setQueue] = React.useState<Task[]>(
-    seedTasks.filter((t) => t.status === "Pending Approval"),
-  );
+  const [queue, setQueue] = React.useState<Task[]>([]);
+  const [projectOptions, setProjectOptions] = React.useState<Project[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [usingSampleData, setUsingSampleData] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
   const [handled, setHandled] = React.useState<
     { task: Task; verdict: Verdict; comment: string }[]
   >([]);
@@ -86,10 +99,58 @@ export default function ApprovalsPage() {
   const [target, setTarget] = React.useState<Task | null>(null);
   const [verdict, setVerdict] = React.useState<Verdict>("approve");
   const [comment, setComment] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
 
-  const visible = queue.filter(
-    (task) => projectFilter === "all" || task.projectId === projectFilter,
-  );
+  React.useEffect(() => {
+    const signal = { cancelled: false };
+
+    const load = async () => {
+      try {
+        const [pending, projectList] = await Promise.all([
+          listPendingApprovals({ projectId: projectFilter, limit: 100 }),
+          listProjects({ limit: 100 }).catch(() => null),
+        ]);
+        if (signal.cancelled) return;
+
+        setQueue(toTasks(pending.items));
+        setProjectOptions(
+          projectList ? toProjects(projectList.items) : seedProjects,
+        );
+        setUsingSampleData(false);
+      } catch (error) {
+        if (signal.cancelled) return;
+        console.error("Failed to load approvals:", error);
+        setQueue(seedTasks.filter((t) => t.status === "Pending Approval"));
+        setProjectOptions(seedProjects);
+        setUsingSampleData(true);
+      } finally {
+        if (!signal.cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [projectFilter, reloadKey]);
+
+  const refresh = () => {
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
+
+  // The server already filtered by project; sample mode filters locally.
+  const visible = usingSampleData
+    ? queue.filter(
+        (task) => projectFilter === "all" || task.projectId === projectFilter,
+      )
+    : queue;
+
+  const taskIsOverdue = (task: Task) =>
+    !!task.dueDate &&
+    task.status !== "Completed" &&
+    task.status !== "Rejected" &&
+    task.dueDate < REFERENCE_TODAY;
 
   const open = (task: Task, next: Verdict) => {
     setTarget(task);
@@ -97,24 +158,53 @@ export default function ApprovalsPage() {
     setComment("");
   };
 
-  const confirm = () => {
+  const confirm = async () => {
     if (!target) return;
     if (VERDICT_COPY[verdict].needsComment && !comment.trim()) {
       toast.error("Add a comment so the assignee knows what to change");
       return;
     }
 
-    setQueue((prev) => prev.filter((t) => t.id !== target.id));
-    setHandled((prev) => [{ task: target, verdict, comment }, ...prev]);
+    const decided = target;
+    const note = comment;
 
-    toast.success(
-      verdict === "approve"
-        ? "Task approved"
-        : verdict === "reject"
-          ? "Task rejected"
-          : "Returned to the assignee",
-    );
-    setTarget(null);
+    setSubmitting(true);
+    try {
+      let message = "";
+      if (!usingSampleData) {
+        // All three decisions post `comments`; reject and return require it.
+        const payload = note.trim() ? { comments: note.trim() } : {};
+        const response =
+          verdict === "approve"
+            ? await approveTask(decided.id, payload)
+            : verdict === "reject"
+              ? await rejectTask(decided.id, payload)
+              : await returnTask(decided.id, payload);
+        message = response.message;
+      }
+
+      setQueue((prev) => prev.filter((t) => t.id !== decided.id));
+      setHandled((prev) => [{ task: decided, verdict, comment: note }, ...prev]);
+      setTarget(null);
+
+      toast.success(
+        message ||
+          (verdict === "approve"
+            ? "Task approved"
+            : verdict === "reject"
+              ? "Task rejected"
+              : "Returned to the assignee"),
+        {
+          description: usingSampleData
+            ? "Sample data — nothing was sent to the server."
+            : undefined,
+        },
+      );
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not record the decision."));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -123,6 +213,13 @@ export default function ApprovalsPage() {
         title="Approval Center"
         description="Tasks whose project requires approval before work can be closed."
       />
+
+      {usingSampleData && (
+        <SampleDataNotice
+          message="Could not reach the approvals API — showing sample data. Decisions will not be saved."
+          onRetry={refresh}
+        />
+      )}
 
       <StatGrid>
         <StatTile
@@ -161,7 +258,7 @@ export default function ApprovalsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All projects</SelectItem>
-            {projects.map((project) => (
+            {projectOptions.map((project) => (
               <SelectItem key={project.id} value={project.id}>
                 {project.name}
               </SelectItem>
@@ -173,7 +270,12 @@ export default function ApprovalsPage() {
         </span>
       </div>
 
-      {visible.length === 0 ? (
+      {loading ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-72 w-full" />
+          <Skeleton className="h-72 w-full" />
+        </div>
+      ) : visible.length === 0 ? (
         <EmptyState
           title="Nothing waiting for approval"
           description="Tasks submitted for approval from the mobile app appear here."
@@ -186,7 +288,8 @@ export default function ApprovalsPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           {visible.map((task) => {
-            const project = projectById(task.projectId);
+            const projectName =
+              task.projectName ?? projectNameOf(task.projectId);
             return (
               <Card key={task.id}>
                 <CardHeader>
@@ -201,7 +304,7 @@ export default function ApprovalsPage() {
                         </Link>
                       </CardTitle>
                       <CardDescription>
-                        {project?.name} · {task.id}
+                        {projectName} · {task.id}
                       </CardDescription>
                     </div>
                     <PriorityBadge priority={task.priority} />
@@ -213,13 +316,53 @@ export default function ApprovalsPage() {
                       <p className="mb-1 text-xs text-muted-foreground">
                         Submitted by
                       </p>
-                      <PersonCell employeeId={task.creatorId} />
+                      {task.creatorId ? (
+                        <PersonCell
+                          employee={{
+                            id: task.creatorId,
+                            name:
+                              task.people?.find(
+                                (person) => person.id === task.creatorId,
+                              )?.name ??
+                              employeeById(task.creatorId)?.name ??
+                              "Unknown",
+                            email: "",
+                            avatarColor:
+                              task.people?.find(
+                                (person) => person.id === task.creatorId,
+                              )?.avatarColor ?? "#2d5a4c",
+                          }}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </div>
                     <div>
                       <p className="mb-1 text-xs text-muted-foreground">
                         Assignee
                       </p>
-                      <PersonCell employeeId={task.assigneeId} />
+                      {task.assigneeId ? (
+                        <PersonCell
+                          employee={{
+                            id: task.assigneeId,
+                            name:
+                              task.people?.find(
+                                (person) => person.id === task.assigneeId,
+                              )?.name ??
+                              employeeById(task.assigneeId)?.name ??
+                              "Unknown",
+                            email: "",
+                            avatarColor:
+                              task.people?.find(
+                                (person) => person.id === task.assigneeId,
+                              )?.avatarColor ?? "#2d5a4c",
+                          }}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Unassigned
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -227,8 +370,10 @@ export default function ApprovalsPage() {
                     <div className="flex justify-between border-b py-1">
                       <dt className="text-muted-foreground">Approver</dt>
                       <dd className="font-medium">
-                        {task.approverId
-                          ? (employeeById(task.approverId)?.name ?? "—")
+                        {task.approverIds?.length
+                          ? (task.people?.find(
+                              (person) => person.id === task.approverId,
+                            )?.name ?? `${task.approverIds.length} approver(s)`)
                           : "Admin"}
                       </dd>
                     </div>
@@ -247,7 +392,7 @@ export default function ApprovalsPage() {
                     <div className="flex justify-between border-b py-1">
                       <dt className="text-muted-foreground">Overdue</dt>
                       <dd className="font-medium">
-                        {isOverdue(task) ? "Yes" : "No"}
+                        {taskIsOverdue(task) ? "Yes" : "No"}
                       </dd>
                     </div>
                   </dl>
@@ -358,8 +503,9 @@ export default function ApprovalsPage() {
                   : "bg-[#2d5a4c] hover:bg-[#234539]"
               }
               onClick={confirm}
+              disabled={submitting}
             >
-              {VERDICT_COPY[verdict].cta}
+              {submitting ? "Saving…" : VERDICT_COPY[verdict].cta}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -43,9 +43,9 @@ export function Legend({
 }) {
   return (
     <ul className={cn("flex flex-wrap items-center gap-x-4 gap-y-1", className)}>
-      {series.map((s) => (
+      {series.map((s, index) => (
         <li
-          key={s.label}
+          key={index}
           className="flex items-center gap-1.5 text-xs text-muted-foreground"
         >
           <span
@@ -82,7 +82,7 @@ export function ChartTable({
             <tr className="border-b">
               {columns.map((c, i) => (
                 <th
-                  key={c}
+                  key={i}
                   className={cn(
                     "py-1.5 pr-3 font-medium text-muted-foreground",
                     i === 0 ? "text-left" : "text-right",
@@ -94,8 +94,10 @@ export function ChartTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={String(row[0])} className="border-b last:border-0">
+            {/* Keyed by position: a row's first cell is a label, which can
+                repeat or be blank, so it is not a stable identity. */}
+            {rows.map((row, rowIndex) => (
+              <tr key={rowIndex} className="border-b last:border-0">
                 {row.map((cell, i) => (
                   <td
                     key={i}
@@ -128,9 +130,9 @@ export function TooltipCard({
     <div className="pointer-events-none rounded-lg border bg-popover px-2.5 py-2 text-popover-foreground shadow-md">
       <p className="mb-1 text-xs font-medium">{title}</p>
       <ul className="space-y-0.5">
-        {rows.map((r) => (
+        {rows.map((r, index) => (
           <li
-            key={r.label}
+            key={index}
             className="flex items-center gap-2 text-xs whitespace-nowrap"
           >
             {r.color && (

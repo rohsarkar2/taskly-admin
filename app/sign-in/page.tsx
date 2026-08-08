@@ -17,11 +17,13 @@ import { getErrorMessage, login } from "@/lib/api/auth";
 import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
 import { setTokens } from "@/lib/redux/slices/authSlice";
 import { setUser } from "@/lib/redux/slices/userSlice";
+import { consumeRedirect } from "@/lib/auth-redirect";
 
 export default function SignIn() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+  const isRestored = useAppSelector((state) => state.auth.isRestored);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -29,12 +31,12 @@ export default function SignIn() {
   });
   const [isLoading, setIsLoading] = useState(false);
 
-  // Redirect to dashboard if already authenticated
+  // Already signed in — skip the form. Waits for the restore so this does not
+  // fire against a not-yet-known session.
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace("/dashboard");
-    }
-  }, [isAuthenticated, router]);
+    if (!isRestored || !isAuthenticated) return;
+    router.replace(consumeRedirect() ?? "/dashboard");
+  }, [isRestored, isAuthenticated, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,8 +67,8 @@ export default function SignIn() {
 
       toast.success(message || "Logged in successfully!");
 
-      // Redirect to dashboard
-      router.push("/dashboard");
+      // Return to whatever the admin was trying to open, if anything.
+      router.push(consumeRedirect() ?? "/dashboard");
     } catch (error: unknown) {
       toast.error(
         getErrorMessage(error, "Failed to sign in. Please try again."),

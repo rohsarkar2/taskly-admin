@@ -17,7 +17,6 @@ import type {
   OrganizationSettingsPayload,
   OrganizationSummary,
   UpdateOrganizationRequest,
-  UpdateProjectWorkflowRequest,
   UpdateSettingsRequest,
 } from "./types";
 
@@ -75,22 +74,6 @@ export async function updateOrganizationSettings(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Per-project workflow                                                       */
-/* -------------------------------------------------------------------------- */
-
-/** Overrides the organization defaults for one project. */
-export async function updateProjectWorkflow(
-  projectId: string,
-  payload: UpdateProjectWorkflowRequest,
-): Promise<ApiResponse<EmptyData>> {
-  const { data } = await axiosPrivate.put(
-    ADMIN_ENDPOINTS.PROJECT_WORKFLOW(projectId),
-    payload,
-  );
-  return unwrapResponse<EmptyData>(data);
-}
-
-/* -------------------------------------------------------------------------- */
 /* Summary                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -113,6 +96,5 @@ export type {
   OrganizationSettingsPayload,
   OrganizationSummary,
   UpdateOrganizationRequest,
-  UpdateProjectWorkflowRequest,
   UpdateSettingsRequest,
 } from "./types";

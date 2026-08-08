@@ -35,6 +35,7 @@ export default function SignUp() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+  const isRestored = useAppSelector((state) => state.auth.isRestored);
   const [isLoading, setIsLoading] = useState(false);
   const [created, setCreated] = useState<CreatedOrganization | null>(null);
   const [formData, setFormData] = useState({
@@ -48,12 +49,11 @@ export default function SignUp() {
     termsAccepted: false,
   });
 
-  // Redirect to dashboard if already authenticated
+  // Already signed in — skip the form, once the session is actually known.
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace("/dashboard");
-    }
-  }, [isAuthenticated, router]);
+    if (!isRestored || !isAuthenticated) return;
+    router.replace("/dashboard");
+  }, [isRestored, isAuthenticated, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -16,18 +16,33 @@ export const EMPLOYEE_STATUSES = [
   "Active",
   "Suspended",
   "Rejected",
+  /** Soft-removed: the record is kept so old tasks still resolve. */
+  "Removed",
 ] as const;
 export type EmployeeStatus = (typeof EMPLOYEE_STATUSES)[number];
 
 export const TASK_STATUSES = [
+  /** The API calls this `pending`. */
   "To Do",
   "In Progress",
   "Pending Approval",
+  /** Sent back by an approver for rework, then resubmitted. */
+  "Returned",
   "Blocked",
   "Completed",
   "Rejected",
 ] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/**
+ * Statuses an admin may set directly.
+ *
+ * `Blocked` is excluded: it exists for legacy fixture data but is not part of
+ * the server enum, so offering it would only produce a 400.
+ */
+export const SETTABLE_TASK_STATUSES = TASK_STATUSES.filter(
+  (status) => status !== "Blocked",
+);
 
 export const PRIORITIES = ["Low", "Medium", "High", "Urgent"] as const;
 export type Priority = (typeof PRIORITIES)[number];
@@ -57,38 +72,87 @@ export interface Employee {
   avatarColor: string;
 }
 
+/**
+ * Per-project workflow overrides.
+ *
+ * Every field may be left unset on the server, meaning "inherit the
+ * organization default"; the UI resolves those to concrete values on read.
+ */
 export interface ProjectWorkflow {
-  /** When false, tasks go straight to "To Do" with no approval gate. */
-  approvalRequired: boolean;
-  /** When true, approvals resolve automatically after creation. */
-  autoApprove: boolean;
-  /** Roles allowed to approve a task in this project. */
-  approvers: Role[];
-  adminCanApprove: boolean;
+  /** When false, tasks skip the approval gate entirely. */
+  requireTaskApproval: boolean;
+  /** Role that approves when no explicit approvers are named. */
+  approverRole: Role | null;
+  /** Explicit approver employee ids. Take precedence over `approverRole`. */
+  approverIds: string[];
   defaultPriority: Priority;
+  allowMemberTaskCreation: boolean;
+  allowMemberTaskDeletion: boolean;
+  /** Completes the project once every task is done. */
+  autoCompleteOnAllTasksDone: boolean;
+}
+
+/** A member as the project endpoints return them — populated, not just an id. */
+export interface ProjectPerson {
+  id: string;
+  name: string;
+  email?: string;
+  role?: Role;
+  avatarColor: string;
+}
+
+/** Task roll-up returned alongside a project. */
+export interface ProjectTaskStats {
+  total: number;
+  pending: number;
+  inProgress: number;
+  pendingApproval: number;
+  completed: number;
+  remaining: number;
+  completionPercentage: number;
 }
 
 export interface Project {
   id: string;
   name: string;
-  key: string;
+  /** Short project code, e.g. `MOB`. */
+  code: string;
   description: string;
   status: ProjectStatus;
+  priority: Priority;
+  tags: string[];
   startDate: string;
+  /** The API calls this `endDate`. */
   deadline: string;
   /** Employee ids assigned to the project. */
   memberIds: string[];
   leadIds: string[];
   managerIds: string[];
+  /** Populated people, when the endpoint returned them. */
+  people?: ProjectPerson[];
+  /** Present on list and detail responses; absent on fixtures. */
+  taskStats?: ProjectTaskStats;
   workflow: ProjectWorkflow;
   createdAt: string;
+  completedAt?: string | null;
 }
 
 export interface TaskEvent {
   id: string;
+  /** ISO date. */
   at: string;
   actorId: string;
+  /**
+   * Whether the actor was an admin or an employee. Admins are not in the
+   * employee directory, so an id lookup alone can never resolve one.
+   */
+  actorModel?: "Admin" | "Employee";
+  /** Carried by the event itself — no directory lookup required. */
+  actorName?: string;
+  actorAvatarColor?: string;
+  /** Human-readable phrase, e.g. "approved the task". */
   action: string;
+  /** Supporting line: a review comment, or a status transition. */
   detail?: string;
 }
 
@@ -97,18 +161,58 @@ export interface Task {
   title: string;
   description: string;
   projectId: string;
+  /** Present when the endpoint populated the project. */
+  projectName?: string;
   creatorId: string;
-  assigneeId: string;
-  /** Employee expected to approve this task; null when no approval is required. */
+  /** Null when the task is unassigned. */
+  assigneeId: string | null;
+  /** First approver, kept for the single-approver views. */
   approverId: string | null;
+  /** Every approver the project workflow resolved to. */
+  approverIds?: string[];
+  requiresApproval?: boolean;
   status: TaskStatus;
   priority: Priority;
+  tags?: string[];
+  estimatedHours?: number | null;
+  actualHours?: number | null;
   createdAt: string;
-  dueDate: string;
+  dueDate: string | null;
   completedAt: string | null;
   /** Populated when a task was rejected or returned for changes. */
   reviewComment?: string;
+  /** Populated people referenced by the task, for name lookups. */
+  people?: ProjectPerson[];
   timeline: TaskEvent[];
+}
+
+/** A person named in a comment, or offered by the @-mention picker. */
+export interface MentionUser {
+  id: string;
+  name: string;
+  email?: string;
+  role?: Role;
+  avatarColor: string;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  /** Null for a top-level comment. Replies are one level deep only. */
+  parentId: string | null;
+  content: string;
+  authorId: string;
+  authorName: string;
+  /** Authors may be admins, who are not in the employee directory. */
+  authorModel?: "Admin" | "Employee";
+  authorAvatarColor: string;
+  mentions: MentionUser[];
+  replyCount: number;
+  isEdited: boolean;
+  isDeleted: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  replies: TaskComment[];
 }
 
 export type NotificationKind =

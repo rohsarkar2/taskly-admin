@@ -13,6 +13,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -31,79 +33,163 @@ import {
 import {
   EmptyState,
   PageHeader,
-  PriorityBadge,
-  TaskStatusBadge,
+  SampleDataNotice,
 } from "@/components/dashboard/ui-bits";
+import { getErrorMessage } from "@/lib/api/auth";
+import { toProjects, toEmployees } from "@/lib/api/adapters";
+import { listProjects } from "@/lib/api/projects";
+import { listEmployees } from "@/lib/api/employees";
 import {
-  activeEmployees,
-  employeeById,
-  formatDate,
-  isOverdue,
-  projects,
-  projectNameOf,
-  tasks,
-} from "@/lib/mock-data";
-import { ROLES, TASK_STATUSES } from "@/lib/types";
+  downloadReport,
+  getReport,
+  getReportCatalog,
+} from "@/lib/api/reports";
+import type {
+  ReportData,
+  ReportDefinition,
+  ReportFormat,
+  ReportType,
+} from "@/lib/api/reports";
+import { formatDateTime } from "@/lib/mock-data";
+import type { Employee, Project } from "@/lib/types";
+import { PRIORITIES, SETTABLE_TASK_STATUSES } from "@/lib/types";
 
-type ReportType = "tasks" | "employees" | "projects";
-
-const REPORT_LABEL: Record<ReportType, string> = {
-  tasks: "Task report",
-  employees: "Employee report",
-  projects: "Project report",
-};
+/** Fallback when the catalog endpoint is unreachable. */
+const DEFAULT_REPORTS: ReportDefinition[] = [
+  { type: "tasks", title: "Task Report", columns: [], filters: [] },
+  { type: "projects", title: "Project Report", columns: [], filters: [] },
+  { type: "employees", title: "Employee Report", columns: [], filters: [] },
+  { type: "teams", title: "Team Report", columns: [], filters: ["projectId"] },
+];
 
 export default function ReportsPage() {
+  const [catalog, setCatalog] = React.useState<ReportDefinition[]>([]);
+  const [maxRows, setMaxRows] = React.useState(5000);
+  const [catalogUnavailable, setCatalogUnavailable] = React.useState(false);
+
+  const [projectOptions, setProjectOptions] = React.useState<Project[]>([]);
+  const [employeeOptions, setEmployeeOptions] = React.useState<Employee[]>([]);
+
   const [reportType, setReportType] = React.useState<ReportType>("tasks");
   const [projectFilter, setProjectFilter] = React.useState("all");
-  const [employeeFilter, setEmployeeFilter] = React.useState("all");
-  const [roleFilter, setRoleFilter] = React.useState("all");
+  const [assigneeFilter, setAssigneeFilter] = React.useState("all");
   const [statusFilter, setStatusFilter] = React.useState("all");
-  const [from, setFrom] = React.useState("2026-06-01");
-  const [to, setTo] = React.useState("2026-08-07");
+  const [priorityFilter, setPriorityFilter] = React.useState("all");
+  const [dueAfter, setDueAfter] = React.useState("");
+  const [dueBefore, setDueBefore] = React.useState("");
+  const [search, setSearch] = React.useState("");
 
-  const filteredTasks = tasks.filter((task) => {
-    if (projectFilter !== "all" && task.projectId !== projectFilter)
-      return false;
-    if (employeeFilter !== "all" && task.assigneeId !== employeeFilter)
-      return false;
-    if (statusFilter !== "all" && task.status !== statusFilter) return false;
-    return task.createdAt >= from && task.createdAt <= to;
+  const [report, setReport] = React.useState<ReportData | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [downloading, setDownloading] = React.useState<ReportFormat | null>(
+    null,
+  );
+
+  // The catalog says which filters each report accepts, so the form only shows
+  // the ones the server will actually honour.
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      const [cat, projects, employees] = await Promise.allSettled([
+        getReportCatalog(),
+        listProjects({ limit: 100 }),
+        listEmployees({ status: "Active", limit: 200 }),
+      ]);
+      if (cancelled) return;
+
+      if (cat.status === "fulfilled") {
+        setCatalog(cat.value.data.reports ?? DEFAULT_REPORTS);
+        setMaxRows(cat.value.data.maxRows ?? 5000);
+        setCatalogUnavailable(false);
+      } else {
+        console.error("Failed to load the report catalog:", cat.reason);
+        setCatalog(DEFAULT_REPORTS);
+        setCatalogUnavailable(true);
+      }
+
+      if (projects.status === "fulfilled")
+        setProjectOptions(toProjects(projects.value.items));
+      if (employees.status === "fulfilled")
+        setEmployeeOptions(toEmployees(employees.value.items));
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const definition = catalog.find((entry) => entry.type === reportType);
+  const accepts = (filter: string) =>
+    // With no catalog, fall back to the documented filter sets.
+    definition?.filters?.includes(filter) ??
+    (reportType === "tasks" ||
+      (reportType === "teams" && filter === "projectId"));
+
+  const filters = () => ({
+    projectId: projectFilter,
+    assignee: assigneeFilter,
+    status: statusFilter === "all" ? undefined : statusFilter.toLowerCase(),
+    priority:
+      priorityFilter === "all" ? undefined : priorityFilter.toLowerCase(),
+    dueAfter: dueAfter || undefined,
+    dueBefore: dueBefore || undefined,
+    search: search || undefined,
   });
 
-  const filteredEmployees = activeEmployees.filter(
-    (employee) => roleFilter === "all" || employee.role === roleFilter,
-  );
+  const generate = async () => {
+    setLoading(true);
+    try {
+      const { data } = await getReport(reportType, filters());
+      setReport(data);
+      if (data.truncated) {
+        toast.warning(`Showing the first ${maxRows} rows`, {
+          description: "Narrow the filters to see the rest.",
+        });
+      }
+    } catch (error) {
+      setReport(null);
+      toast.error(getErrorMessage(error, "Could not generate the report."));
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const filteredProjects = projects.filter(
-    (project) => projectFilter === "all" || project.id === projectFilter,
-  );
-
-  const rowCount =
-    reportType === "tasks"
-      ? filteredTasks.length
-      : reportType === "employees"
-        ? filteredEmployees.length
-        : filteredProjects.length;
-
-  const exportAs = (format: "PDF" | "Excel" | "CSV") => {
-    toast.success(`${REPORT_LABEL[reportType]} queued as ${format}`, {
-      description: `${rowCount} rows · ${formatDate(from)} to ${formatDate(to)}. You will get a notification when it is ready.`,
-    });
+  const download = async (format: Exclude<ReportFormat, "json">) => {
+    setDownloading(format);
+    try {
+      const filename = await downloadReport(reportType, format, filters());
+      toast.success(`Downloaded ${filename}`);
+    } catch (error) {
+      toast.error(
+        getErrorMessage(
+          error,
+          "Could not download the report. Generation is rate-limited to 30 per 10 minutes.",
+        ),
+      );
+    } finally {
+      setDownloading(null);
+    }
   };
 
   return (
     <>
       <PageHeader
         title="Reports"
-        description="Build a report from any combination of project, employee, team, date range and status."
+        description="Build a report from any combination of project, employee, status and date range."
       />
+
+      {catalogUnavailable && (
+        <SampleDataNotice message="Could not load the report catalog — showing the default report types." />
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>Report builder</CardTitle>
           <CardDescription>
-            The preview below updates as you change the filters.
+            Generate a preview on screen, or download the same rows as a file.
+            Capped at {maxRows.toLocaleString()} rows.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -112,40 +198,25 @@ export default function ReportsPage() {
               <Label htmlFor="report-type">Report</Label>
               <Select
                 value={reportType}
-                onValueChange={(v) => setReportType(v as ReportType)}
+                onValueChange={(v) => {
+                  setReportType(v as ReportType);
+                  setReport(null);
+                }}
               >
                 <SelectTrigger id="report-type" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tasks">Tasks</SelectItem>
-                  <SelectItem value="employees">Employees</SelectItem>
-                  <SelectItem value="projects">Projects</SelectItem>
+                  {catalog.map((entry) => (
+                    <SelectItem key={entry.type} value={entry.type}>
+                      {entry.title}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="report-from">From</Label>
-              <Input
-                id="report-from"
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="report-to">To</Label>
-              <Input
-                id="report-to"
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              />
-            </div>
-
-            {reportType !== "employees" && (
+            {accepts("projectId") && (
               <div className="space-y-2">
                 <Label htmlFor="report-project">Project</Label>
                 <Select value={projectFilter} onValueChange={setProjectFilter}>
@@ -154,7 +225,7 @@ export default function ReportsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All projects</SelectItem>
-                    {projects.map((project) => (
+                    {projectOptions.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
                         {project.name}
                       </SelectItem>
@@ -164,103 +235,148 @@ export default function ReportsPage() {
               </div>
             )}
 
-            {reportType === "tasks" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="report-employee">Employee</Label>
-                  <Select
-                    value={employeeFilter}
-                    onValueChange={setEmployeeFilter}
-                  >
-                    <SelectTrigger id="report-employee" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All employees</SelectItem>
-                      {activeEmployees.map((employee) => (
-                        <SelectItem key={employee.id} value={employee.id}>
-                          {employee.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="report-status">Task status</Label>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger id="report-status" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All statuses</SelectItem>
-                      {TASK_STATUSES.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {status}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-
-            {reportType === "employees" && (
+            {accepts("assignee") && (
               <div className="space-y-2">
-                <Label htmlFor="report-role">Team / role</Label>
-                <Select value={roleFilter} onValueChange={setRoleFilter}>
-                  <SelectTrigger id="report-role" className="w-full">
+                <Label htmlFor="report-assignee">Assignee</Label>
+                <Select
+                  value={assigneeFilter}
+                  onValueChange={setAssigneeFilter}
+                >
+                  <SelectTrigger id="report-assignee" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All roles</SelectItem>
-                    {ROLES.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        {role}
+                    <SelectItem value="all">All employees</SelectItem>
+                    <SelectItem value="none">Unassigned</SelectItem>
+                    {employeeOptions.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
+
+            {accepts("status") && (
+              <div className="space-y-2">
+                <Label htmlFor="report-status">Status</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger id="report-status" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {SETTABLE_TASK_STATUSES.map((status) => (
+                      <SelectItem
+                        key={status}
+                        value={status.toLowerCase().replace(/\s+/g, "_")}
+                      >
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {accepts("priority") && (
+              <div className="space-y-2">
+                <Label htmlFor="report-priority">Priority</Label>
+                <Select
+                  value={priorityFilter}
+                  onValueChange={setPriorityFilter}
+                >
+                  <SelectTrigger id="report-priority" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All priorities</SelectItem>
+                    {PRIORITIES.map((priority) => (
+                      <SelectItem key={priority} value={priority}>
+                        {priority}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {accepts("dueAfter") && (
+              <div className="space-y-2">
+                <Label htmlFor="report-from">Due after</Label>
+                <Input
+                  id="report-from"
+                  type="date"
+                  value={dueAfter}
+                  onChange={(e) => setDueAfter(e.target.value)}
+                />
+              </div>
+            )}
+
+            {accepts("dueBefore") && (
+              <div className="space-y-2">
+                <Label htmlFor="report-to">Due before</Label>
+                <Input
+                  id="report-to"
+                  type="date"
+                  value={dueBefore}
+                  onChange={(e) => setDueBefore(e.target.value)}
+                />
+              </div>
+            )}
+
+            {accepts("search") && (
+              <div className="space-y-2">
+                <Label htmlFor="report-search">Search</Label>
+                <Input
+                  id="report-search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Title or description"
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-            <span className="text-sm text-muted-foreground">
-              {rowCount} rows in this report
-            </span>
+            <Button
+              size="sm"
+              className="bg-[#2d5a4c] hover:bg-[#234539]"
+              onClick={generate}
+              disabled={loading}
+            >
+              <Download data-icon="inline-start" />
+              {loading ? "Generating…" : "Generate preview"}
+            </Button>
+
             <div className="ml-auto flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => exportAs("PDF")}
-              >
-                <FileText data-icon="inline-start" />
-                PDF
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => exportAs("Excel")}
-              >
-                <FileSpreadsheet data-icon="inline-start" />
-                Excel
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => exportAs("CSV")}
+                onClick={() => download("csv")}
+                disabled={downloading !== null}
               >
                 <Table2 data-icon="inline-start" />
-                CSV
+                {downloading === "csv" ? "Preparing…" : "CSV"}
               </Button>
               <Button
+                variant="outline"
                 size="sm"
-                className="bg-[#2d5a4c] hover:bg-[#234539]"
-                onClick={() => exportAs("PDF")}
+                onClick={() => download("excel")}
+                disabled={downloading !== null}
               >
-                <Download data-icon="inline-start" />
-                Generate report
+                <FileSpreadsheet data-icon="inline-start" />
+                {downloading === "excel" ? "Preparing…" : "Excel"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => download("pdf")}
+                disabled={downloading !== null}
+              >
+                <FileText data-icon="inline-start" />
+                {downloading === "pdf" ? "Preparing…" : "PDF"}
               </Button>
             </div>
           </div>
@@ -269,168 +385,85 @@ export default function ReportsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{REPORT_LABEL[reportType]} preview</CardTitle>
-          <CardDescription>
-            {formatDate(from)} — {formatDate(to)}
-          </CardDescription>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>{definition?.title ?? "Report"} preview</CardTitle>
+              <CardDescription>
+                {report
+                  ? `${report.rowCount.toLocaleString()} rows · generated ${formatDateTime(report.generatedAt)}`
+                  : "Generate a preview to see the rows here."}
+              </CardDescription>
+            </div>
+            {report?.truncated && (
+              <Badge variant="outline">Truncated at {maxRows}</Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
-          {rowCount === 0 ? (
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : !report ? (
             <EmptyState
-              title="Nothing in this range"
-              description="Widen the date range or clear a filter."
+              title="No preview yet"
+              description="Pick your filters and generate the report."
+              action={
+                <Button size="sm" onClick={generate}>
+                  Generate preview
+                </Button>
+              }
+            />
+          ) : report.rows.length === 0 ? (
+            <EmptyState
+              title="No rows match"
+              description="Widen the filters and try again."
             />
           ) : (
             <div className="overflow-x-auto">
-              {reportType === "tasks" && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Task</TableHead>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Assignee</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead className="text-right">Created</TableHead>
-                      <TableHead className="text-right">Due</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTasks.map((task) => (
-                      <TableRow key={task.id}>
-                        <TableCell className="max-w-[18rem] truncate font-medium">
-                          {task.title}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {projectNameOf(task.projectId)}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {employeeById(task.assigneeId)?.name ?? "—"}
-                        </TableCell>
-                        <TableCell>
-                          <TaskStatusBadge
-                            status={task.status}
-                            overdue={isOverdue(task)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <PriorityBadge priority={task.priority} />
-                        </TableCell>
-                        <TableCell className="text-right text-xs whitespace-nowrap">
-                          {formatDate(task.createdAt)}
-                        </TableCell>
-                        <TableCell className="text-right text-xs whitespace-nowrap">
-                          {formatDate(task.dueDate)}
-                        </TableCell>
-                      </TableRow>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {report.columns.map((column) => (
+                      <TableHead key={column.key}>{column.label}</TableHead>
                     ))}
-                  </TableBody>
-                </Table>
-              )}
-
-              {reportType === "employees" && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Projects</TableHead>
-                      <TableHead className="text-right">Assigned</TableHead>
-                      <TableHead className="text-right">Completed</TableHead>
-                      <TableHead className="text-right">Joined</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {report.rows.map((row, index) => (
+                    <TableRow key={index}>
+                      {report.columns.map((column) => (
+                        <TableCell key={column.key} className="text-sm">
+                          {renderCell(row[column.key])}
+                        </TableCell>
+                      ))}
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredEmployees.map((employee) => {
-                      const assigned = tasks.filter(
-                        (t) => t.assigneeId === employee.id,
-                      );
-                      return (
-                        <TableRow key={employee.id}>
-                          <TableCell className="font-medium">
-                            {employee.name}
-                            <span className="block text-xs text-muted-foreground">
-                              {employee.email}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {employee.role}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {employee.projectIds.length}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {assigned.length}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {
-                              assigned.filter((t) => t.status === "Completed")
-                                .length
-                            }
-                          </TableCell>
-                          <TableCell className="text-right text-xs whitespace-nowrap">
-                            {employee.joinedAt
-                              ? formatDate(employee.joinedAt)
-                              : "—"}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-
-              {reportType === "projects" && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Members</TableHead>
-                      <TableHead className="text-right">Tasks</TableHead>
-                      <TableHead className="text-right">Completed</TableHead>
-                      <TableHead className="text-right">Deadline</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProjects.map((project) => {
-                      const projectTasks = tasks.filter(
-                        (t) => t.projectId === project.id,
-                      );
-                      return (
-                        <TableRow key={project.id}>
-                          <TableCell className="font-medium">
-                            {project.name}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {project.status}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {project.memberIds.length}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {projectTasks.length}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {
-                              projectTasks.filter(
-                                (t) => t.status === "Completed",
-                              ).length
-                            }
-                          </TableCell>
-                          <TableCell className="text-right text-xs whitespace-nowrap">
-                            {formatDate(project.deadline)}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>
       </Card>
     </>
   );
+}
+
+/**
+ * Report rows are untyped — the columns differ per report — so values are
+ * rendered defensively rather than assuming a shape.
+ */
+function renderCell(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return String(value);
+
+  if (typeof value === "string") {
+    // ISO timestamps read better as a formatted date.
+    return /^\d{4}-\d{2}-\d{2}T/.test(value) ? formatDateTime(value) : value;
+  }
+
+  return JSON.stringify(value);
 }

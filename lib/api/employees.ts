@@ -9,7 +9,7 @@
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
 import { unwrapList, unwrapResponse, type ListResult } from "./response";
-import { toApiRole, toApiStatus } from "./adapters";
+import { toApiRole } from "./adapters";
 import type {
   ApiEmployee,
   ApiResponse,
@@ -17,8 +17,11 @@ import type {
   EmployeeData,
   EmployeeDetailData,
   EmployeeListParams,
+  EmployeeProjectsData,
+  EmployeeStatsData,
   EmptyData,
   RejectEmployeeRequest,
+  SuspendEmployeeRequest,
 } from "./types";
 import type { EmployeeStatus, Role } from "@/lib/types";
 
@@ -42,10 +45,13 @@ export async function listEmployees(
     query.role = toApiRole(params.role as Role);
   }
   if (params.status && params.status !== "all") {
-    query.status = toApiStatus(params.status as EmployeeStatus);
+    query.status = params.status.toLowerCase();
   }
+  if (params.department) query.department = params.department;
   if (params.page) query.page = params.page;
   if (params.limit) query.limit = params.limit;
+  if (params.sortBy) query.sortBy = params.sortBy;
+  if (params.sortOrder) query.sortOrder = params.sortOrder;
 
   const { data } = await axiosPrivate.get(ADMIN_ENDPOINTS.EMPLOYEES, {
     params: query,
@@ -53,11 +59,39 @@ export async function listEmployees(
   return unwrapList<ApiEmployee>(data, "employees");
 }
 
+/** Returns the employee plus a light `summary`; richer numbers come from `getEmployeeStats`. */
 export async function getEmployee(
   id: string,
 ): Promise<ApiResponse<EmployeeDetailData>> {
   const { data } = await axiosPrivate.get(ADMIN_ENDPOINTS.EMPLOYEE(id));
   return unwrapResponse<EmployeeDetailData>(data);
+}
+
+export async function getEmployeeStats(
+  id: string,
+): Promise<ApiResponse<EmployeeStatsData>> {
+  const { data } = await axiosPrivate.get(ADMIN_ENDPOINTS.EMPLOYEE_STATS(id));
+  return unwrapResponse<EmployeeStatsData>(data);
+}
+
+/** Each entry carries `projectRole`, the employee's role within that project. */
+export async function getEmployeeProjects(
+  id: string,
+): Promise<ApiResponse<EmployeeProjectsData>> {
+  const { data } = await axiosPrivate.get(
+    ADMIN_ENDPOINTS.EMPLOYEE_PROJECTS(id),
+  );
+  return unwrapResponse<EmployeeProjectsData>(data);
+}
+
+export async function getEmployeeTasks(
+  id: string,
+  params: { status?: string; page?: number; limit?: number } = {},
+): Promise<ListResult<unknown>> {
+  const { data } = await axiosPrivate.get(ADMIN_ENDPOINTS.EMPLOYEE_TASKS(id), {
+    params,
+  });
+  return unwrapList<unknown>(data, "tasks");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -96,22 +130,43 @@ export async function changeEmployeeRole(
   id: string,
   role: Role,
 ): Promise<ApiResponse<EmployeeData>> {
-  const { data } = await axiosPrivate.patch(ADMIN_ENDPOINTS.EMPLOYEE_ROLE(id), {
+  const { data } = await axiosPrivate.put(ADMIN_ENDPOINTS.EMPLOYEE_ROLE(id), {
     role: toApiRole(role),
   });
   return unwrapResponse<EmployeeData>(data);
 }
 
-/** `Suspended` blocks sign-in and revokes the employee's active sessions. */
+/** Only `active` employees can be suspended; their session is revoked at once. */
+export async function suspendEmployee(
+  id: string,
+  payload: SuspendEmployeeRequest = {},
+): Promise<ApiResponse<EmployeeData>> {
+  const { data } = await axiosPrivate.put(
+    ADMIN_ENDPOINTS.EMPLOYEE_SUSPEND(id),
+    payload,
+  );
+  return unwrapResponse<EmployeeData>(data);
+}
+
+/** Reverses a suspension. A `pending` employee must go through approve instead. */
+export async function activateEmployee(
+  id: string,
+): Promise<ApiResponse<EmployeeData>> {
+  const { data } = await axiosPrivate.put(
+    ADMIN_ENDPOINTS.EMPLOYEE_ACTIVATE(id),
+  );
+  return unwrapResponse<EmployeeData>(data);
+}
+
+/** Convenience wrapper so callers can express a target status directly. */
 export async function changeEmployeeStatus(
   id: string,
   status: EmployeeStatus,
+  reason?: string,
 ): Promise<ApiResponse<EmployeeData>> {
-  const { data } = await axiosPrivate.patch(
-    ADMIN_ENDPOINTS.EMPLOYEE_STATUS(id),
-    { status: toApiStatus(status) },
-  );
-  return unwrapResponse<EmployeeData>(data);
+  return status === "Active"
+    ? activateEmployee(id)
+    : suspendEmployee(id, reason ? { reason } : {});
 }
 
 /**
