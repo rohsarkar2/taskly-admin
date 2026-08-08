@@ -7,13 +7,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -24,6 +17,22 @@ import { getErrorMessage, registerOrganization } from "@/lib/api/auth";
 import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
 import { setTokens } from "@/lib/redux/slices/authSlice";
 import { setUser } from "@/lib/redux/slices/userSlice";
+import {
+  Building2,
+  User,
+  Mail,
+  Lock,
+  Phone,
+  Users,
+  CheckCircle2,
+  Copy,
+  ArrowRight,
+  Sparkles,
+  Shield,
+  Zap,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 
 /** Set once registration succeeds, so we can reveal the organization ID. */
 interface CreatedOrganization {
@@ -38,6 +47,8 @@ export default function SignUp() {
   const isRestored = useAppSelector((state) => state.auth.isRestored);
   const [isLoading, setIsLoading] = useState(false);
   const [created, setCreated] = useState<CreatedOrganization | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
     organizationName: "",
     adminFullName: "",
@@ -128,241 +139,524 @@ export default function SignUp() {
   // Registration succeeded — hand over the organization ID before anything else.
   if (created) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white px-4 py-8">
-        <Card className="w-full max-w-md">
-          <CardHeader className="space-y-1 text-center">
-            <CardTitle className="text-3xl font-bold tracking-tight">
-              {formData.organizationName} is ready
-            </CardTitle>
-            <CardDescription>
-              Share the organization ID with your employees so they can register
-              from the Taskly app.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-lg border p-4 text-center">
-              <p className="text-xs text-muted-foreground">Organization ID</p>
-              <p className="mt-1 font-mono text-2xl font-bold tracking-wider">
-                {created.organizationId ?? "Check your email"}
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-white px-4 py-8">
+        <div className="w-full max-w-2xl">
+          <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+            {/* Success Header */}
+            <div className="bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] p-8 text-center">
+              <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-12 h-12 text-white" />
+              </div>
+              <h1 className="text-3xl font-bold text-white mb-2">
+                {formData.organizationName} is ready!
+              </h1>
+              <p className="text-white/90">
+                Your organization has been created successfully
               </p>
             </div>
 
-            {created.organizationId && (
+            <div className="p-8 space-y-6">
+              {/* Organization ID Card */}
+              <div className="bg-gradient-to-br from-[#2d5a4c]/5 to-[#3a6f5c]/5 rounded-xl p-6 border-2 border-[#2d5a4c]/20">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-5 h-5 text-[#2d5a4c]" />
+                    <p className="text-sm font-semibold text-gray-700">
+                      Organization ID
+                    </p>
+                  </div>
+                  {created.organizationId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={copyOrganizationId}
+                      className="text-[#2d5a4c] hover:text-[#234539] hover:bg-[#2d5a4c]/10"
+                    >
+                      <Copy className="w-4 h-4 mr-2" />
+                      Copy
+                    </Button>
+                  )}
+                </div>
+                <p className="font-mono text-3xl font-bold text-[#2d5a4c] tracking-wider text-center">
+                  {created.organizationId ?? "Check your email"}
+                </p>
+              </div>
+
+              {/* Instructions */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#2d5a4c]" />
+                  Next Steps
+                </h3>
+                <div className="space-y-3">
+                  {[
+                    {
+                      step: "1",
+                      title: "Share Organization ID",
+                      description:
+                        "Employees need this ID to register on the Taskly mobile app",
+                    },
+                    {
+                      step: "2",
+                      title: "Review Employee Requests",
+                      description:
+                        "Pending requests will appear in Employee Requests section",
+                    },
+                    {
+                      step: "3",
+                      title: "Approve & Assign Roles",
+                      description:
+                        "Approve employees and set their role (Manager, Team Lead, etc.)",
+                    },
+                    {
+                      step: "4",
+                      title: "Create Projects",
+                      description:
+                        "Set up projects and assign employees to get started",
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.step}
+                      className="flex gap-4 p-4 rounded-lg bg-gray-50 border border-gray-200"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-[#2d5a4c] text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                        {item.step}
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-1">
+                          {item.title}
+                        </h4>
+                        <p className="text-sm text-gray-600">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Button */}
               <Button
-                variant="outline"
-                className="w-full"
-                onClick={copyOrganizationId}
+                className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20"
+                onClick={() =>
+                  router.push(created.signedIn ? "/dashboard" : "/sign-in")
+                }
               >
-                Copy organization ID
+                {created.signedIn ? (
+                  <span className="flex items-center justify-center gap-2">
+                    Go to Dashboard
+                    <ArrowRight className="w-5 h-5" />
+                  </span>
+                ) : (
+                  "Sign in to continue"
+                )}
               </Button>
-            )}
-
-            <ol className="space-y-1.5 rounded-lg border p-3 text-xs text-muted-foreground">
-              <li>1. Employees install the Taskly app and register with this ID.</li>
-              <li>2. Their request lands in Employee Requests as Pending.</li>
-              <li>3. You approve them and pick their role.</li>
-              <li>4. They get access to the projects you assign them to.</li>
-            </ol>
-
-            <Button
-              className="w-full bg-[#2d5a4c] hover:bg-[#234539]"
-              onClick={() =>
-                router.push(created.signedIn ? "/dashboard" : "/sign-in")
-              }
-            >
-              {created.signedIn ? "Go to dashboard" : "Sign in to continue"}
-            </Button>
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white px-4 py-8">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-3xl font-bold tracking-tight">
-            Taskly Admin
-          </CardTitle>
-          <CardDescription>Create your organization account</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="space-y-2">
-              <label htmlFor="organizationName" className="text-sm font-medium">
-                Organization Name <span className="text-red-500">*</span>
-              </label>
-              <Input
-                id="organizationName"
-                name="organizationName"
-                type="text"
-                required
-                value={formData.organizationName}
-                onChange={(e) =>
-                  setFormData({ ...formData, organizationName: e.target.value })
-                }
-                placeholder="Enter organization name"
-              />
+    <div className="flex h-screen overflow-hidden">
+      {/*
+        Left — branding. Pinned: the page itself never scrolls, so this panel
+        stays put while the form moves. `overflow-hidden` keeps the blurred
+        decorations from creating a scrollable area of their own.
+      */}
+      <div className="relative hidden shrink-0 overflow-hidden bg-gradient-to-br from-[#2d5a4c] via-[#3a6f5c] to-[#4a8570] lg:flex lg:w-1/2">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-20 left-20 w-72 h-72 bg-white rounded-full blur-3xl" />
+          <div className="absolute bottom-20 right-20 w-96 h-96 bg-white rounded-full blur-3xl" />
+        </div>
+
+        {/*
+          The content scrolls inside the panel rather than being clipped, so a
+          short viewport (a landscape tablet, say) can still reach the feature
+          list without the panel moving.
+        */}
+        <div className="relative z-10 flex h-full w-full flex-col justify-between gap-10 overflow-y-auto p-12">
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-8">
+              <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+                <CheckCircle2 className="w-7 h-7 text-white" />
+              </div>
+              <h1 className="text-3xl font-bold text-white">Taskly</h1>
+            </div>
+            <h2 className="text-4xl font-bold text-white mb-4 leading-tight">
+              Start managing
+              <br />
+              your team today
+            </h2>
+            <p className="text-lg text-white/90 max-w-md">
+              Join thousands of organizations using Taskly to streamline their
+              operations.
+            </p>
+          </div>
+
+          <div className="relative z-10 space-y-6">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+                <Zap className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-white font-semibold mb-1">Quick Setup</h3>
+                <p className="text-white/80 text-sm">
+                  Get started in minutes with our intuitive onboarding
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-white font-semibold mb-1">
+                  Enterprise Security
+                </h3>
+                <p className="text-white/80 text-sm">
+                  Bank-level security to keep your data safe
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/*
+        Right — the form, and the only scrolling region on the page.
+
+        The scroll container holds a `min-h-full` flex wrapper rather than
+        centring directly: `items-center` on a scroll container pushes overflow
+        past the top of the scroll range, so a form taller than the viewport
+        loses its heading and first fields with no way to reach them. With
+        `min-h-full` the wrapper centres short content and simply grows when the
+        form is tall, keeping the top reachable.
+      */}
+      <div className="w-full overflow-y-auto bg-linear-to-br from-gray-50 to-white lg:w-1/2">
+        <div className="flex min-h-full items-center justify-center px-4 py-6 lg:px-6">
+          <div className="w-full max-w-md">
+            <div className="mb-6  ">
+              <div className="lg:hidden flex items-center gap-2 mb-6">
+                <div className="w-10 h-10 bg-[#2d5a4c] rounded-xl flex items-center justify-center">
+                  <CheckCircle2 className="w-6 h-6 text-white" />
+                </div>
+                <h1 className="text-2xl font-bold text-gray-900">Taskly</h1>
+              </div>
+              <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                Create your organization
+              </h2>
+              <p className="text-gray-600">Get started with a free account</p>
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="adminFullName" className="text-sm font-medium">
-                Admin Full Name <span className="text-red-500">*</span>
-              </label>
-              <Input
-                id="adminFullName"
-                name="adminFullName"
-                type="text"
-                autoComplete="name"
-                required
-                value={formData.adminFullName}
-                onChange={(e) =>
-                  setFormData({ ...formData, adminFullName: e.target.value })
-                }
-                placeholder="Enter your full name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="workEmail" className="text-sm font-medium">
-                Work Email <span className="text-red-500">*</span>
-              </label>
-              <Input
-                id="workEmail"
-                name="workEmail"
-                type="email"
-                autoComplete="email"
-                required
-                value={formData.workEmail}
-                onChange={(e) =>
-                  setFormData({ ...formData, workEmail: e.target.value })
-                }
-                placeholder="Enter your work email"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium">
-                Password <span className="text-red-500">*</span>
-              </label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-                placeholder="Create a password"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="confirmPassword" className="text-sm font-medium">
-                Confirm Password <span className="text-red-500">*</span>
-              </label>
-              <Input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={formData.confirmPassword}
-                onChange={(e) =>
-                  setFormData({ ...formData, confirmPassword: e.target.value })
-                }
-                placeholder="Confirm your password"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="phoneNumber" className="text-sm font-medium">
-                Phone Number (Optional)
-              </label>
-              <Input
-                id="phoneNumber"
-                name="phoneNumber"
-                type="tel"
-                autoComplete="tel"
-                value={formData.phoneNumber}
-                onChange={(e) =>
-                  setFormData({ ...formData, phoneNumber: e.target.value })
-                }
-                placeholder="Enter phone number"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="organizationSize" className="text-sm font-medium">
-                Organization Size (Optional)
-              </label>
-              <Select
-                value={formData.organizationSize}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, organizationSize: value })
-                }
-              >
-                <SelectTrigger id="organizationSize" className="w-full">
-                  <SelectValue placeholder="Select organization size" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Small-Team">Small Team (1-10)</SelectItem>
-                  <SelectItem value="Medium-Team">
-                    Medium Team (11-50)
-                  </SelectItem>
-                  <SelectItem value="Large-Team">
-                    Large Team (51-200)
-                  </SelectItem>
-                  <SelectItem value="Enterprise">Enterprise (200+)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <input
-                id="terms"
-                name="terms"
-                type="checkbox"
-                checked={formData.termsAccepted}
-                onChange={(e) =>
-                  setFormData({ ...formData, termsAccepted: e.target.checked })
-                }
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              <label htmlFor="terms" className="text-sm text-muted-foreground">
-                I agree to{" "}
-                <Link
-                  href="#"
-                  className="text-[#2d5a4c] hover:text-[#234539] font-medium"
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              {/* Organization Name */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="organizationName"
+                  className="text-sm font-medium text-gray-700"
                 >
-                  Terms & Conditions
-                </Link>
-              </label>
-            </div>
+                  Organization Name <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="organizationName"
+                    name="organizationName"
+                    type="text"
+                    required
+                    value={formData.organizationName}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        organizationName: e.target.value,
+                      })
+                    }
+                    placeholder="Acme Corp"
+                    className="pl-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                  />
+                </div>
+              </div>
 
-            <Button
-              type="submit"
-              className="w-full bg-[#2d5a4c] hover:bg-[#234539]"
-              disabled={isLoading}
-            >
-              {isLoading ? "Creating Organization..." : "Create Organization"}
-            </Button>
+              {/* Admin Full Name */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="adminFullName"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Admin Full Name <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="adminFullName"
+                    name="adminFullName"
+                    type="text"
+                    autoComplete="name"
+                    required
+                    value={formData.adminFullName}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        adminFullName: e.target.value,
+                      })
+                    }
+                    placeholder="John Doe"
+                    className="pl-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                  />
+                </div>
+              </div>
 
-            <div className="text-center text-sm text-muted-foreground">
-              Already have an account?{" "}
-              <Link
-                href="/sign-in"
-                className="font-medium text-[#2d5a4c] hover:text-[#234539]"
+              {/* Work Email */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="workEmail"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Work Email <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="workEmail"
+                    name="workEmail"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    value={formData.workEmail}
+                    onChange={(e) =>
+                      setFormData({ ...formData, workEmail: e.target.value })
+                    }
+                    placeholder="john@acmecorp.com"
+                    className="pl-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                  />
+                </div>
+              </div>
+
+              {/* Password Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label
+                    htmlFor="password"
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Password <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Input
+                      id="password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      required
+                      value={formData.password}
+                      onChange={(e) =>
+                        setFormData({ ...formData, password: e.target.value })
+                      }
+                      placeholder="••••••••"
+                      className="pl-11 pr-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-5 h-5" />
+                      ) : (
+                        <Eye className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="confirmPassword"
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Confirm <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Input
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      required
+                      value={formData.confirmPassword}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          confirmPassword: e.target.value,
+                        })
+                      }
+                      placeholder="••••••••"
+                      className="pl-11 pr-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShowConfirmPassword(!showConfirmPassword)
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff className="w-5 h-5" />
+                      ) : (
+                        <Eye className="w-5 h-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Optional Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label
+                    htmlFor="phoneNumber"
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Phone Number
+                  </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <Input
+                      id="phoneNumber"
+                      name="phoneNumber"
+                      type="tel"
+                      autoComplete="tel"
+                      value={formData.phoneNumber}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          phoneNumber: e.target.value,
+                        })
+                      }
+                      placeholder="+1 234 567 8900"
+                      className="pl-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="organizationSize"
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    Team Size
+                  </label>
+                  <div className="relative">
+                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 z-10" />
+                    <Select
+                      value={formData.organizationSize}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, organizationSize: value })
+                      }
+                    >
+                      <SelectTrigger
+                        id="organizationSize"
+                        className="w-full pl-11 !h-12 border border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                        style={{ height: "3rem" }}
+                      >
+                        <SelectValue placeholder="Select size" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Small-Team">Small (1-10)</SelectItem>
+                        <SelectItem value="Medium-Team">
+                          Medium (11-50)
+                        </SelectItem>
+                        <SelectItem value="Large-Team">
+                          Large (51-200)
+                        </SelectItem>
+                        <SelectItem value="Enterprise">
+                          Enterprise (200+)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Terms */}
+              <div className="flex items-start space-x-2 pt-2">
+                <input
+                  id="terms"
+                  name="terms"
+                  type="checkbox"
+                  checked={formData.termsAccepted}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      termsAccepted: e.target.checked,
+                    })
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-[#2d5a4c] focus:ring-[#2d5a4c] mt-0.5"
+                />
+                <label htmlFor="terms" className="text-sm text-gray-600">
+                  I agree to the{" "}
+                  <Link
+                    href="#"
+                    className="text-[#2d5a4c] hover:text-[#234539] font-medium underline"
+                  >
+                    Terms & Conditions
+                  </Link>{" "}
+                  and{" "}
+                  <Link
+                    href="#"
+                    className="text-[#2d5a4c] hover:text-[#234539] font-medium underline"
+                  >
+                    Privacy Policy
+                  </Link>
+                </label>
+              </div>
+
+              {/* Submit Button */}
+              <Button
+                type="submit"
+                className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
+                disabled={isLoading}
               >
-                Sign in
+                {isLoading ? (
+                  "Creating Organization..."
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    Create Organization
+                    <ArrowRight className="w-5 h-5" />
+                  </span>
+                )}
+              </Button>
+
+              {/* Sign In Link */}
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-4 bg-white text-gray-500">
+                    Already have an account?
+                  </span>
+                </div>
+              </div>
+
+              <Link href="/sign-in">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-12 border-2 border-gray-300 hover:border-[#2d5a4c] hover:text-[#2d5a4c] font-medium transition-all duration-200"
+                >
+                  Sign in instead
+                </Button>
               </Link>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+            </form>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
