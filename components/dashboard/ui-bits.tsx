@@ -3,12 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Meter } from "@/components/charts/bar-chart";
 import { employeeById, initialsOf } from "@/lib/mock-data";
 import type {
+  Employee,
   EmployeeStatus,
   Priority,
   ProjectStatus,
@@ -73,6 +75,34 @@ export function SectionTitle({
   );
 }
 
+/**
+ * Shown when an endpoint could not be reached and the page fell back to the
+ * seeded fixtures. Labelling it is the point — unlabelled sample data reads as
+ * real data.
+ */
+export function SampleDataNotice({
+  message = "Could not reach the API — showing sample data.",
+  onRetry,
+}: {
+  message?: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-l-4 border-l-(--viz-warning) bg-muted/40 px-3 py-2">
+      <span
+        aria-hidden
+        className="size-1.5 shrink-0 rounded-full bg-(--viz-warning)"
+      />
+      <p className="text-xs text-muted-foreground">{message}</p>
+      {onRetry && (
+        <Button variant="ghost" size="xs" className="ml-auto" onClick={onRetry}>
+          Retry
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export function EmptyState({
   title,
   description,
@@ -114,7 +144,9 @@ export function StatTile({
   href?: string;
 }) {
   const body = (
-    <Card className={cn(href && "transition-colors hover:border-foreground/20")}>
+    <Card
+      className={cn(href && "transition-colors hover:border-foreground/20")}
+    >
       <CardContent className="flex items-start justify-between gap-3 py-4">
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-muted-foreground">
@@ -264,17 +296,36 @@ export function RoleBadge({ role }: { role: Role }) {
 /* People                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Renders a person as avatar + name + subtitle.
+ *
+ * Takes either a full `employee` (API-backed pages) or an `employeeId` to look
+ * up in the fixtures (pages still running on static data).
+ */
 export function PersonCell({
+  employee: provided,
   employeeId,
   subtitle,
   href,
 }: {
-  employeeId: string;
+  employee?: Pick<Employee, "id" | "name" | "email" | "avatarColor">;
+  employeeId?: string;
   subtitle?: string;
   href?: string;
 }) {
-  const employee = employeeById(employeeId);
-  if (!employee) return <span className="text-muted-foreground">Unknown</span>;
+  const employee =
+    provided ?? (employeeId ? employeeById(employeeId) : undefined);
+
+  if (!employee) {
+    return (
+      <span className="flex items-center gap-2">
+        <Avatar className="size-7 shrink-0" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium">Unknown</span>
+        </span>
+      </span>
+    );
+  }
 
   const inner = (
     <span className="flex min-w-0 items-center gap-2">
@@ -297,13 +348,7 @@ export function PersonCell({
     </span>
   );
 
-  return href ? (
-    <Link href={href} className="hover:underline">
-      {inner}
-    </Link>
-  ) : (
-    inner
-  );
+  return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
 export function AvatarStack({

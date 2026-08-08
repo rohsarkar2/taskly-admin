@@ -1,31 +1,35 @@
 /**
  * Admin authentication API.
  *
- * One function per endpoint in `docs/BACKEND_API.md` §1. Pages call these
+ * One function per endpoint in the Authentication API spec. Pages call these
  * instead of hand-rolling axios calls, so a path or payload change lands in
  * exactly one place.
  *
- * Every response is the `{ success, message, data }` envelope. These functions
- * return it whole rather than unwrapping to `data`, because callers show
- * `message` in the success toast. Errors propagate — callers pass them to
- * `getErrorMessage` to build the failure toast.
+ * Responses come back as the `{ success, message, data }` envelope. These
+ * functions normalise through `unwrapResponse` and return the envelope whole
+ * rather than just `data`, because callers show `message` in the success toast.
+ * Errors propagate — callers pass them to `getErrorMessage` for the failure
+ * toast.
  */
 
 import axios from "axios";
 import { axiosPrivate, axiosPublic } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
+import { unwrapResponse } from "./response";
 import type {
   AdminDetailsData,
   ApiResponse,
   ChangePasswordRequest,
   EmptyData,
+  ForgotPasswordData,
   ForgotPasswordRequest,
   LoginRequest,
-  OrganizationData,
   RegisterRequest,
   ResetPasswordRequest,
   SessionData,
   TokenPairData,
+  VerifyResetOtpData,
+  VerifyResetOtpRequest,
 } from "./types";
 
 /* -------------------------------------------------------------------------- */
@@ -36,21 +40,21 @@ import type {
 export async function registerOrganization(
   payload: RegisterRequest,
 ): Promise<ApiResponse<SessionData>> {
-  const { data } = await axiosPublic.post<ApiResponse<SessionData>>(
+  const { data } = await axiosPublic.post(
     ADMIN_ENDPOINTS.REGISTER,
     payload,
   );
-  return data;
+  return unwrapResponse<SessionData>(data);
 }
 
 export async function login(
   payload: LoginRequest,
 ): Promise<ApiResponse<SessionData>> {
-  const { data } = await axiosPublic.post<ApiResponse<SessionData>>(
+  const { data } = await axiosPublic.post(
     ADMIN_ENDPOINTS.LOGIN,
     payload,
   );
-  return data;
+  return unwrapResponse<SessionData>(data);
 }
 
 /**
@@ -62,19 +66,19 @@ export async function login(
 export async function refreshSession(
   refreshToken: string,
 ): Promise<ApiResponse<TokenPairData>> {
-  const { data } = await axiosPublic.post<ApiResponse<TokenPairData>>(
+  const { data } = await axiosPublic.post(
     ADMIN_ENDPOINTS.REFRESH_TOKEN,
     { refreshToken },
   );
-  return data;
+  return unwrapResponse<TokenPairData>(data);
 }
 
 export async function logout(): Promise<ApiResponse<EmptyData>> {
-  const { data } = await axiosPrivate.post<ApiResponse<EmptyData>>(
+  const { data } = await axiosPrivate.post(
     ADMIN_ENDPOINTS.LOGOUT,
     {},
   );
-  return data;
+  return unwrapResponse<EmptyData>(data);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -82,57 +86,74 @@ export async function logout(): Promise<ApiResponse<EmptyData>> {
 /* -------------------------------------------------------------------------- */
 
 export async function getAdminDetails(): Promise<ApiResponse<AdminDetailsData>> {
-  const { data } = await axiosPrivate.get<ApiResponse<AdminDetailsData>>(
+  const { data } = await axiosPrivate.get(
     ADMIN_ENDPOINTS.DETAILS,
   );
-  return data;
+  return unwrapResponse<AdminDetailsData>(data);
 }
 
-export async function getOrganization(): Promise<ApiResponse<OrganizationData>> {
-  const { data } = await axiosPrivate.get<ApiResponse<OrganizationData>>(
-    ADMIN_ENDPOINTS.ORGANIZATION,
-  );
-  return data;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Passwords                                                                  */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Emails a reset link. Resolves with the same neutral message whether or not
- * the address belongs to an account, so nothing here reveals which emails are
- * registered.
+ * Step 1 of 3 — emails a six-digit code, valid 10 minutes.
+ *
+ * Always resolves, with the same neutral message whether or not the address
+ * belongs to an account, so nothing here reveals which emails are registered.
+ * Requesting a new code invalidates any reset token an earlier verification
+ * already handed out.
  */
 export async function forgotPassword(
   payload: ForgotPasswordRequest,
-): Promise<ApiResponse<EmptyData>> {
-  const { data } = await axiosPublic.post<ApiResponse<EmptyData>>(
+): Promise<ApiResponse<ForgotPasswordData>> {
+  const { data } = await axiosPublic.post(
     ADMIN_ENDPOINTS.FORGOT_PASSWORD,
     payload,
   );
-  return data;
+  return unwrapResponse<ForgotPasswordData>(data);
 }
 
-/** Consumes the single-use token from the reset email. */
+/**
+ * Step 2 of 3 — trades a correct code for the reset token.
+ *
+ * The code is consumed on success and also once the five-attempt budget is
+ * spent, after which the admin has to request a new one.
+ */
+export async function verifyResetOtp(
+  payload: VerifyResetOtpRequest,
+): Promise<ApiResponse<VerifyResetOtpData>> {
+  const { data } = await axiosPublic.post(
+    ADMIN_ENDPOINTS.VERIFY_RESET_OTP,
+    payload,
+  );
+  return unwrapResponse<VerifyResetOtpData>(data);
+}
+
+/**
+ * Step 3 of 3 — sets the new password using the token from `verifyResetOtp`,
+ * never the OTP itself. Single-use, valid 15 minutes, and it kills every
+ * existing session.
+ */
 export async function resetPassword(
   payload: ResetPasswordRequest,
 ): Promise<ApiResponse<EmptyData>> {
-  const { data } = await axiosPublic.post<ApiResponse<EmptyData>>(
+  const { data } = await axiosPublic.post(
     ADMIN_ENDPOINTS.RESET_PASSWORD,
     payload,
   );
-  return data;
+  return unwrapResponse<EmptyData>(data);
 }
 
 export async function changePassword(
   payload: ChangePasswordRequest,
 ): Promise<ApiResponse<EmptyData>> {
-  const { data } = await axiosPrivate.post<ApiResponse<EmptyData>>(
+  const { data } = await axiosPrivate.post(
     ADMIN_ENDPOINTS.CHANGE_PASSWORD,
     payload,
   );
-  return data;
+  return unwrapResponse<EmptyData>(data);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -156,10 +177,12 @@ export type {
   AdminUser,
   ApiResponse,
   ChangePasswordRequest,
+  ForgotPasswordData,
   LoginRequest,
-  Organization,
-  OrganizationData,
   RegisterRequest,
+  ResetPasswordRequest,
   SessionData,
   TokenPairData,
+  VerifyResetOtpData,
+  VerifyResetOtpRequest,
 } from "./types";

@@ -2,7 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MoreHorizontal, ShieldCheck, UserCheck, UserCog, Users } from "lucide-react";
+import {
+  MoreHorizontal,
+  ShieldCheck,
+  UserCheck,
+  UserCog,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -55,20 +61,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   EmployeeStatusBadge,
   EmptyState,
   PageHeader,
   PersonCell,
   RoleBadge,
+  SampleDataNotice,
   StatGrid,
   StatTile,
 } from "@/components/dashboard/ui-bits";
+import { getErrorMessage } from "@/lib/api/auth";
+import { toEmployees } from "@/lib/api/adapters";
 import {
-  employees as seedEmployees,
-  formatDate,
-  tasks,
-} from "@/lib/mock-data";
+  changeEmployeeRole,
+  changeEmployeeStatus,
+  listEmployees,
+  removeEmployee,
+} from "@/lib/api/employees";
+import { employees as seedEmployees, formatDate, tasks } from "@/lib/mock-data";
 import {
   EMPLOYEE_STATUSES,
   ROLES,
@@ -78,54 +90,169 @@ import {
 } from "@/lib/types";
 
 export default function EmployeesPage() {
-  const [roster, setRoster] = React.useState<Employee[]>(seedEmployees);
+  const [roster, setRoster] = React.useState<Employee[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [usingSampleData, setUsingSampleData] = React.useState(false);
+  const [total, setTotal] = React.useState(0);
   const [query, setQuery] = React.useState("");
   const [roleFilter, setRoleFilter] = React.useState<Role | "all">("all");
-  const [statusFilter, setStatusFilter] = React.useState<EmployeeStatus | "all">(
-    "all",
-  );
+  const [statusFilter, setStatusFilter] = React.useState<
+    EmployeeStatus | "all"
+  >("all");
 
   const [roleTarget, setRoleTarget] = React.useState<Employee | null>(null);
   const [nextRole, setNextRole] = React.useState<Role>("Team Member");
   const [removeTarget, setRemoveTarget] = React.useState<Employee | null>(null);
 
-  const visible = roster.filter((employee) => {
+  /**
+   * Filtering is the server's job, so the fetch is re-run when the filters
+   * change — debounced, since `query` updates on every keystroke. In sample
+   * mode there is no server, so the same predicates run locally instead.
+   */
+  const load = React.useCallback(
+    async (signal?: { cancelled: boolean }) => {
+      try {
+        const result = await listEmployees({
+          search: query || undefined,
+          role: roleFilter,
+          status: statusFilter,
+          limit: 100,
+        });
+        if (signal?.cancelled) return;
+
+        setRoster(toEmployees(result.items));
+        setTotal(result.total);
+        setUsingSampleData(false);
+      } catch (error) {
+        if (signal?.cancelled) return;
+        console.error("Failed to load employees:", error);
+        setRoster(seedEmployees);
+        setTotal(seedEmployees.length);
+        setUsingSampleData(true);
+      } finally {
+        if (!signal?.cancelled) setLoading(false);
+      }
+    },
+    [query, roleFilter, statusFilter],
+  );
+
+  React.useEffect(() => {
+    const signal = { cancelled: false };
+    const timer = setTimeout(
+      () => {
+        setLoading(true);
+        load(signal);
+      },
+      query ? 300 : 0,
+    );
+    return () => {
+      signal.cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [load, query]);
+
+  const matchesFilters = (employee: Employee) => {
     if (employee.status === "Pending") return false; // handled on Employee Requests
     if (roleFilter !== "all" && employee.role !== roleFilter) return false;
-    if (statusFilter !== "all" && employee.status !== statusFilter) return false;
+    if (statusFilter !== "all" && employee.status !== statusFilter)
+      return false;
     return `${employee.name} ${employee.email} ${employee.jobTitle ?? ""}`
       .toLowerCase()
       .includes(query.toLowerCase());
-  });
+  };
+
+  // The server already applied the filters; re-running them locally would be
+  // wrong if its matching differs, so only sample mode filters here.
+  const visible = usingSampleData
+    ? roster.filter(matchesFilters)
+    : roster.filter((employee) => employee.status !== "Pending");
 
   const taskCount = (employeeId: string) =>
     tasks.filter((t) => t.assigneeId === employeeId).length;
 
-  const setStatus = (employee: Employee, status: EmployeeStatus) => {
+  const setStatus = async (employee: Employee, status: EmployeeStatus) => {
+    const previous = roster;
+    // Optimistic: the row flips immediately and rolls back if the call fails.
     setRoster((prev) =>
       prev.map((e) => (e.id === employee.id ? { ...e, status } : e)),
     );
-    toast.success(
+
+    const fallback =
       status === "Active"
         ? `${employee.name} is active again`
-        : `${employee.name} was suspended`,
-    );
+        : `${employee.name} was suspended`;
+
+    if (usingSampleData) {
+      toast.success(fallback, {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await changeEmployeeStatus(employee.id, status);
+      toast.success(message || fallback);
+    } catch (error) {
+      setRoster(previous);
+      toast.error(
+        getErrorMessage(error, `Could not update ${employee.name}'s status.`),
+      );
+    }
   };
 
-  const confirmRoleChange = () => {
+  const confirmRoleChange = async () => {
     if (!roleTarget) return;
+
+    const target = roleTarget;
+    const previous = roster;
     setRoster((prev) =>
-      prev.map((e) => (e.id === roleTarget.id ? { ...e, role: nextRole } : e)),
+      prev.map((e) => (e.id === target.id ? { ...e, role: nextRole } : e)),
     );
-    toast.success(`${roleTarget.name} is now a ${nextRole}`);
     setRoleTarget(null);
+
+    if (usingSampleData) {
+      toast.success(`${target.name} is now a ${nextRole}`, {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await changeEmployeeRole(target.id, nextRole);
+      toast.success(message || `${target.name} is now a ${nextRole}`);
+    } catch (error) {
+      setRoster(previous);
+      toast.error(
+        getErrorMessage(error, `Could not change ${target.name}'s role.`),
+      );
+    }
   };
 
-  const confirmRemove = () => {
+  const confirmRemove = async () => {
     if (!removeTarget) return;
-    setRoster((prev) => prev.filter((e) => e.id !== removeTarget.id));
-    toast.success(`${removeTarget.name} was removed from the organization`);
+
+    const target = removeTarget;
+    const previous = roster;
+    setRoster((prev) => prev.filter((e) => e.id !== target.id));
     setRemoveTarget(null);
+
+    if (usingSampleData) {
+      toast.success(`${target.name} was removed from the organization`, {
+        description: "Sample data — nothing was sent to the server.",
+      });
+      return;
+    }
+
+    try {
+      const { message } = await removeEmployee(target.id);
+      setTotal((count) => Math.max(0, count - 1));
+      toast.success(
+        message || `${target.name} was removed from the organization`,
+      );
+    } catch (error) {
+      setRoster(previous);
+      toast.error(getErrorMessage(error, `Could not remove ${target.name}.`));
+    }
   };
 
   const active = roster.filter((e) => e.status === "Active");
@@ -141,6 +268,16 @@ export default function EmployeesPage() {
           </Button>
         }
       />
+
+      {usingSampleData && (
+        <SampleDataNotice
+          message="Could not reach the employees API — showing sample data. Changes will not be saved."
+          onRetry={() => {
+            setLoading(true);
+            load();
+          }}
+        />
+      )}
 
       <StatGrid>
         <StatTile
@@ -204,7 +341,9 @@ export default function EmployeesPage() {
             </Select>
             <Select
               value={statusFilter}
-              onValueChange={(v) => setStatusFilter(v as EmployeeStatus | "all")}
+              onValueChange={(v) =>
+                setStatusFilter(v as EmployeeStatus | "all")
+              }
             >
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Status" />
@@ -232,11 +371,18 @@ export default function EmployeesPage() {
               </Button>
             )}
             <span className="ml-auto text-xs text-muted-foreground">
-              {visible.length} of {roster.filter((e) => e.status !== "Pending").length}
+              {visible.length} of {total || visible.length}
             </span>
           </div>
 
-          {visible.length === 0 ? (
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : visible.length === 0 ? (
             <EmptyState
               title="No employees match these filters"
               description="Try a different role or status."
@@ -260,7 +406,7 @@ export default function EmployeesPage() {
                     <TableRow key={employee.id}>
                       <TableCell>
                         <PersonCell
-                          employeeId={employee.id}
+                          employee={employee}
                           href={`/dashboard/employees/${employee.id}`}
                           subtitle={employee.jobTitle ?? employee.email}
                         />
@@ -271,14 +417,21 @@ export default function EmployeesPage() {
                       <TableCell>
                         <EmployeeStatusBadge status={employee.status} />
                       </TableCell>
+                      {/*
+                        The list endpoint returns neither project membership
+                        nor task counts, and both would otherwise read as a
+                        real zero for everyone. Show them only for fixtures.
+                      */}
                       <TableCell className="text-right tabular-nums">
-                        {employee.projectIds.length}
+                        {usingSampleData ? employee.projectIds.length : "—"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {taskCount(employee.id)}
+                        {usingSampleData ? taskCount(employee.id) : "—"}
                       </TableCell>
                       <TableCell className="text-right text-xs whitespace-nowrap">
-                        {employee.joinedAt ? formatDate(employee.joinedAt) : "—"}
+                        {employee.joinedAt
+                          ? formatDate(employee.joinedAt)
+                          : "—"}
                       </TableCell>
                       <TableCell>
                         <DropdownMenu>

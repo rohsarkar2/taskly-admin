@@ -37,15 +37,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   EmployeeStatusBadge,
   EmptyState,
   PageHeader,
   PersonCell,
   RoleBadge,
+  SampleDataNotice,
   StatGrid,
   StatTile,
 } from "@/components/dashboard/ui-bits";
+import { getErrorMessage } from "@/lib/api/auth";
+import { toEmployee, toEmployees } from "@/lib/api/adapters";
+import {
+  approveEmployee,
+  listEmployees,
+  listPendingEmployees,
+  rejectEmployee,
+} from "@/lib/api/employees";
 import {
   REFERENCE_TODAY,
   daysBetween,
@@ -59,7 +69,9 @@ import { ROLES, type Employee, type Role } from "@/lib/types";
 type Decision = "approve" | "reject" | null;
 
 export default function EmployeeRequestsPage() {
-  const [roster, setRoster] = React.useState<Employee[]>(seedEmployees);
+  const [roster, setRoster] = React.useState<Employee[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [usingSampleData, setUsingSampleData] = React.useState(false);
   const [query, setQuery] = React.useState("");
 
   const [target, setTarget] = React.useState<Employee | null>(null);
@@ -67,6 +79,9 @@ export default function EmployeeRequestsPage() {
   const [role, setRole] = React.useState<Role>("Team Member");
   const [reason, setReason] = React.useState("");
   const [details, setDetails] = React.useState<Employee | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
+  /** Bumped to re-run the load effect from the Retry button. */
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   const pending = roster.filter((e) => e.status === "Pending");
   const decided = roster.filter(
@@ -76,6 +91,55 @@ export default function EmployeeRequestsPage() {
   const visible = pending.filter((e) =>
     `${e.name} ${e.email}`.toLowerCase().includes(query.toLowerCase()),
   );
+
+  /**
+   * Pending registrations come from their own endpoint; the decided list is a
+   * second call so the "recently decided" table is not limited to this session.
+   * If either call fails the page falls back to fixtures behind a visible
+   * notice, so a half-built backend does not blank the screen.
+   */
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const [pending, decided] = await Promise.all([
+          listPendingEmployees(),
+          listEmployees({ limit: 100 }),
+        ]);
+        if (cancelled) return;
+
+        const merged = new Map<string, Employee>();
+        for (const employee of toEmployees(decided.items)) {
+          merged.set(employee.id, employee);
+        }
+        // Pending wins on conflict — it is the authoritative view of that state.
+        for (const employee of toEmployees(pending.items)) {
+          merged.set(employee.id, { ...employee, status: "Pending" });
+        }
+
+        setRoster([...merged.values()]);
+        setUsingSampleData(false);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to load employee requests:", error);
+        setRoster(seedEmployees);
+        setUsingSampleData(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  const refresh = () => {
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
 
   const openApprove = (employee: Employee) => {
     setTarget(employee);
@@ -94,37 +158,77 @@ export default function EmployeeRequestsPage() {
     setTarget(null);
   };
 
-  const confirmApprove = () => {
-    if (!target) return;
+  /** Applies the server's version of the employee, falling back to a local edit. */
+  const applyDecision = (id: string, patch: Partial<Employee>) =>
     setRoster((prev) =>
-      prev.map((e) =>
-        e.id === target.id
-          ? {
-              ...e,
-              status: "Active",
-              role,
-              joinedAt: todayIso(),
-            }
-          : e,
+      prev.map((employee) =>
+        employee.id === id ? { ...employee, ...patch } : employee,
       ),
     );
-    toast.success(`${target.name} approved as ${role}`, {
-      description: "They now have access to the organization from the app.",
-    });
-    closeDialog();
+
+  const confirmApprove = async () => {
+    if (!target) return;
+
+    setSubmitting(true);
+    try {
+      if (!usingSampleData) {
+        const { message, data } = await approveEmployee(target.id, { role });
+        applyDecision(target.id, {
+          ...(data?.employee ? toEmployee(data.employee) : {}),
+          status: "Active",
+          role,
+          joinedAt: todayIso(),
+        });
+        toast.success(message || `${target.name} approved as ${role}`, {
+          description: "They now have access to the organization from the app.",
+        });
+      } else {
+        applyDecision(target.id, {
+          status: "Active",
+          role,
+          joinedAt: todayIso(),
+        });
+        toast.success(`${target.name} approved as ${role}`, {
+          description: "Sample data — nothing was sent to the server.",
+        });
+      }
+      closeDialog();
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, `Could not approve ${target.name}. Try again.`),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const confirmReject = () => {
+  const confirmReject = async () => {
     if (!target) return;
-    setRoster((prev) =>
-      prev.map((e) =>
-        e.id === target.id ? { ...e, status: "Rejected" } : e,
-      ),
-    );
-    toast.success(`${target.name}'s request was rejected`, {
-      description: reason || "No reason recorded.",
-    });
-    closeDialog();
+
+    setSubmitting(true);
+    try {
+      if (!usingSampleData) {
+        const { message } = await rejectEmployee(target.id, {
+          reason: reason || undefined,
+        });
+        applyDecision(target.id, { status: "Rejected" });
+        toast.success(message || `${target.name}'s request was rejected`, {
+          description: reason || "No reason recorded.",
+        });
+      } else {
+        applyDecision(target.id, { status: "Rejected" });
+        toast.success(`${target.name}'s request was rejected`, {
+          description: "Sample data — nothing was sent to the server.",
+        });
+      }
+      closeDialog();
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, `Could not reject ${target.name}. Try again.`),
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -133,6 +237,13 @@ export default function EmployeeRequestsPage() {
         title="Employee Requests"
         description={`Employees who registered from the mobile app with ${organizationSettings.uniqueOrganizationId}. They cannot open projects or tasks until you approve them.`}
       />
+
+      {usingSampleData && (
+        <SampleDataNotice
+          message="Could not reach the employees API — showing sample data. Approvals will not be saved."
+          onRetry={refresh}
+        />
+      )}
 
       <StatGrid>
         <StatTile
@@ -187,7 +298,13 @@ export default function EmployeeRequestsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {visible.length === 0 ? (
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : visible.length === 0 ? (
             <EmptyState
               title="Nothing waiting for approval"
               description="New registrations from the mobile app will land here."
@@ -208,7 +325,7 @@ export default function EmployeeRequestsPage() {
                   {visible.map((employee) => (
                     <TableRow key={employee.id}>
                       <TableCell>
-                        <PersonCell employeeId={employee.id} />
+                        <PersonCell employee={employee} />
                       </TableCell>
                       <TableCell>
                         <span className="text-sm">
@@ -288,7 +405,7 @@ export default function EmployeeRequestsPage() {
                     <TableRow key={employee.id}>
                       <TableCell>
                         <PersonCell
-                          employeeId={employee.id}
+                          employee={employee}
                           href={
                             employee.status === "Active"
                               ? `/dashboard/employees/${employee.id}`
@@ -354,8 +471,9 @@ export default function EmployeeRequestsPage() {
             <Button
               className="bg-[#2d5a4c] hover:bg-[#234539]"
               onClick={confirmApprove}
+              disabled={submitting}
             >
-              Approve as {role}
+              {submitting ? "Approving…" : `Approve as ${role}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -390,8 +508,12 @@ export default function EmployeeRequestsPage() {
             <Button variant="outline" onClick={closeDialog}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmReject}>
-              Reject request
+            <Button
+              variant="destructive"
+              onClick={confirmReject}
+              disabled={submitting}
+            >
+              {submitting ? "Rejecting…" : "Reject request"}
             </Button>
           </DialogFooter>
         </DialogContent>

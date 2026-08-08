@@ -1,12 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
@@ -15,63 +12,38 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getErrorMessage, resetPassword } from "@/lib/api/auth";
+import { NewPasswordForm } from "@/components/auth/new-password-form";
 
+/**
+ * Direct entry into the last step of the reset flow, for a link that already
+ * carries a reset token: `/reset-password?token=…`.
+ *
+ * The normal path is the `/forgot-password` wizard, which obtains that token by
+ * verifying the emailed code. Without a token there is nothing this page can
+ * do, so it points back there.
+ */
 export default function ResetPassword() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-white px-4">
       <Suspense fallback={<Skeleton className="h-80 w-full max-w-md" />}>
-        <ResetPasswordForm />
+        <ResetPasswordCard />
       </Suspense>
     </div>
   );
 }
 
-function ResetPasswordForm() {
+function ResetPasswordCard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // The email link carries the single-use token: /reset-password?token=…
   const token = searchParams.get("token") ?? "";
 
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!token) {
-      toast.error("This reset link is missing its token. Request a new one.");
-      return;
-    }
-    if (password.length < 8) {
-      toast.error("Password must be at least 8 characters");
-      return;
-    }
-    if (password !== confirmPassword) {
-      toast.error("Passwords do not match");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const { message } = await resetPassword({ token, password });
-      toast.success(message || "Password reset successfully.", {
-        description: "Sign in with your new password.",
-      });
+  const handleDone = useCallback(
+    (message: string) => {
+      toast.success(message, { description: "Sign in with your new password." });
       router.push("/sign-in");
-    } catch (error: unknown) {
-      toast.error(
-        getErrorMessage(
-          error,
-          "Could not reset the password. The link may have expired.",
-        ),
-      );
-      console.error("Reset password error:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    },
+    [router],
+  );
 
   return (
     <Card className="w-full max-w-md">
@@ -83,66 +55,30 @@ function ResetPasswordForm() {
           Choose a password you have not used before.
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        {!token && (
-          <p className="mb-4 rounded-lg border border-l-4 border-l-(--viz-critical) p-3 text-sm text-muted-foreground">
-            This link is missing its reset token.{" "}
+      <CardContent className="space-y-4">
+        {token ? (
+          <NewPasswordForm token={token} onDone={handleDone} />
+        ) : (
+          <p className="rounded-lg border border-l-4 border-l-(--viz-critical) p-3 text-sm text-muted-foreground">
+            This link is missing its reset token. Start the reset from{" "}
             <Link
               href="/forgot-password"
               className="font-medium text-[#2d5a4c] hover:text-[#234539]"
             >
-              Request a new one
-            </Link>
-            .
+              forgot password
+            </Link>{" "}
+            — we will email you a verification code.
           </p>
         )}
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="password">New password</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm new password</Label>
-            <Input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Re-enter the password"
-            />
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full bg-[#2d5a4c] hover:bg-[#234539]"
-            disabled={isLoading || !token}
+        <div className="text-center text-sm text-muted-foreground">
+          <Link
+            href="/sign-in"
+            className="font-medium text-[#2d5a4c] hover:text-[#234539]"
           >
-            {isLoading ? "Updating…" : "Update password"}
-          </Button>
-
-          <div className="text-center text-sm text-muted-foreground">
-            <Link
-              href="/sign-in"
-              className="font-medium text-[#2d5a4c] hover:text-[#234539]"
-            >
-              Back to sign in
-            </Link>
-          </div>
-        </form>
+            Back to sign in
+          </Link>
+        </div>
       </CardContent>
     </Card>
   );

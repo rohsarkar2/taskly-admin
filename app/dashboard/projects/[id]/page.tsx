@@ -33,6 +33,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { HBarChart, Meter, StackedBar } from "@/components/charts/bar-chart";
+import { getErrorMessage } from "@/lib/api/auth";
+import { updateProjectWorkflow } from "@/lib/api/organization";
 import {
   DefinitionRow,
   EmptyState,
@@ -69,6 +71,7 @@ export default function ProjectDetailPage({
   if (!project) notFound();
 
   const [workflow, setWorkflow] = React.useState(project.workflow);
+  const [savingWorkflow, setSavingWorkflow] = React.useState(false);
   const [memberIds, setMemberIds] = React.useState(project.memberIds);
   const [addMemberId, setAddMemberId] = React.useState("");
 
@@ -127,6 +130,34 @@ export default function ProjectDetailPage({
   const removeMember = (employeeId: string) => {
     setMemberIds((prev) => prev.filter((memberId) => memberId !== employeeId));
     toast.success(`${employeeById(employeeId)?.name} removed from the project`);
+  };
+
+  /** The only write on this page that already talks to the real backend. */
+  const saveWorkflow = async () => {
+    if (
+      workflow.approvalRequired &&
+      !workflow.adminCanApprove &&
+      workflow.approvers.length === 0
+    ) {
+      toast.error("Pick at least one approver while approval is required");
+      return;
+    }
+
+    setSavingWorkflow(true);
+    try {
+      const { message } = await updateProjectWorkflow(project.id, {
+        approvalRequired: workflow.approvalRequired,
+        autoApprove: workflow.autoApprove,
+        approvers: workflow.approvers,
+        adminCanApprove: workflow.adminCanApprove,
+        defaultPriority: workflow.defaultPriority,
+      });
+      toast.success(message || "Project workflow updated successfully.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not save the workflow."));
+    } finally {
+      setSavingWorkflow(false);
+    }
   };
 
   const toggleApprover = (role: Role, on: boolean) => {
@@ -540,9 +571,10 @@ export default function ProjectDetailPage({
 
               <Button
                 className="bg-[#2d5a4c] hover:bg-[#234539]"
-                onClick={() => toast.success("Workflow settings saved")}
+                onClick={saveWorkflow}
+                disabled={savingWorkflow}
               >
-                Save workflow
+                {savingWorkflow ? "Saving…" : "Save workflow"}
               </Button>
             </CardContent>
           </Card>

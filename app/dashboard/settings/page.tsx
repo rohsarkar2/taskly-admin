@@ -25,22 +25,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/dashboard/ui-bits";
-import { changePassword as changePasswordRequest, getErrorMessage } from "@/lib/api/auth";
-import { useAppSelector } from "@/lib/redux/hooks";
+import {
+  changePassword as changePasswordRequest,
+  getErrorMessage,
+} from "@/lib/api/auth";
+import {
+  getOrganization,
+  getOrganizationSettings,
+  updateOrganization,
+  updateOrganizationSettings,
+  uploadOrganizationLogo,
+} from "@/lib/api/organization";
+import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
+import { setOrganization } from "@/lib/redux/slices/userSlice";
 import { organizationSettings } from "@/lib/mock-data";
 import { PRIORITIES, TASK_STATUSES, type Priority } from "@/lib/types";
 
 const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+/** Value is the IANA identifier the API stores; the label is for humans. */
 const TIMEZONES = [
-  "Asia/Kolkata (GMT+5:30)",
-  "UTC (GMT+0:00)",
-  "Europe/London (GMT+1:00)",
-  "America/New_York (GMT-4:00)",
-  "Asia/Singapore (GMT+8:00)",
+  { value: "Asia/Kolkata", label: "Asia/Kolkata (GMT+5:30)" },
+  { value: "UTC", label: "UTC (GMT+0:00)" },
+  { value: "Europe/London", label: "Europe/London (GMT+1:00)" },
+  { value: "America/New_York", label: "America/New_York (GMT-4:00)" },
+  { value: "Asia/Singapore", label: "Asia/Singapore (GMT+8:00)" },
 ];
 
 export default function SettingsPage() {
+  const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.user.user);
   const organization = useAppSelector((state) => state.user.organization);
 
@@ -52,10 +65,22 @@ export default function SettingsPage() {
   const [orgName, setOrgName] = React.useState(
     organization?.name ?? organizationSettings.name,
   );
-  const [timezone, setTimezone] = React.useState(organizationSettings.timezone);
+  const [profile, setProfile] = React.useState({
+    industry: "",
+    website: "",
+    email: "",
+    phoneNumber: "",
+  });
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = React.useState(false);
+  const [timezone, setTimezone] = React.useState("Asia/Kolkata");
   const [workingDays, setWorkingDays] = React.useState<string[]>(
     organizationSettings.workingDays,
   );
+
+  const [savingOrganization, setSavingOrganization] = React.useState(false);
+  const [savingWorkflow, setSavingWorkflow] = React.useState(false);
+  const [savingSecurity, setSavingSecurity] = React.useState(false);
 
   /* Workflow -------------------------------------------------------------- */
   const [approvalRequired, setApprovalRequired] = React.useState(
@@ -79,6 +104,61 @@ export default function SettingsPage() {
   });
   const [changingPassword, setChangingPassword] = React.useState(false);
 
+  /**
+   * Load the live organization and settings.
+   *
+   * Failures are logged rather than surfaced: the form falls back to the seeded
+   * defaults so the page stays usable while the endpoints are being built.
+   */
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      const [organizationResult, settingsResult] = await Promise.allSettled([
+        getOrganization(),
+        getOrganizationSettings(),
+      ]);
+
+      if (cancelled) return;
+
+      if (organizationResult.status === "fulfilled") {
+        const org = organizationResult.value.data.organization;
+        dispatch(setOrganization(org));
+        setOrgName(org.name);
+        setProfile({
+          industry: org.industry ?? "",
+          website: org.website ?? "",
+          email: org.email ?? "",
+          phoneNumber: org.phoneNumber ?? "",
+        });
+        if (org.logoUrl) setLogoUrl(org.logoUrl);
+        if (org.timezone) setTimezone(org.timezone);
+      } else {
+        console.error("Failed to load organization:", organizationResult.reason);
+      }
+
+      if (settingsResult.status === "fulfilled") {
+        const settings = settingsResult.value.data;
+        if (settings?.timezone) setTimezone(settings.timezone);
+        if (settings?.workingDays?.length) setWorkingDays(settings.workingDays);
+        if (settings?.logoUrl) setLogoUrl(settings.logoUrl);
+        if (settings?.workflow) {
+          setApprovalRequired(settings.workflow.approvalRequired);
+          setDefaultPriority(settings.workflow.defaultPriority as Priority);
+          setStatusFlow(settings.workflow.statusFlow);
+        }
+        if (settings?.security) setSecurity(settings.security);
+      } else {
+        console.error("Failed to load settings:", settingsResult.reason);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch]);
+
   const toggleDay = (day: string, on: boolean) =>
     setWorkingDays((prev) =>
       on ? [...prev, day] : prev.filter((d) => d !== day),
@@ -88,6 +168,92 @@ export default function SettingsPage() {
     setStatusFlow((prev) =>
       on ? [...prev, status] : prev.filter((s) => s !== status),
     );
+
+  /**
+   * The profile fields belong to the organization record, while working days
+   * belong to settings. Timezone is accepted by both, so it goes in each
+   * payload to keep them from drifting.
+   */
+  const saveOrganization = async () => {
+    if (!orgName.trim()) {
+      toast.error("Organization name cannot be empty");
+      return;
+    }
+
+    setSavingOrganization(true);
+    try {
+      const [organizationResponse] = await Promise.all([
+        updateOrganization({
+          name: orgName,
+          industry: profile.industry || undefined,
+          website: profile.website || undefined,
+          email: profile.email || undefined,
+          phoneNumber: profile.phoneNumber || undefined,
+          timezone,
+        }),
+        updateOrganizationSettings({ timezone, workingDays }),
+      ]);
+
+      const updated = organizationResponse.data?.organization;
+      if (updated) dispatch(setOrganization(updated));
+
+      toast.success(
+        organizationResponse.message || "Organization updated successfully.",
+      );
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, "Could not save the organization details."),
+      );
+    } finally {
+      setSavingOrganization(false);
+    }
+  };
+
+  const uploadLogo = async (file: File | undefined) => {
+    if (!file) return;
+
+    setUploadingLogo(true);
+    try {
+      const { message, data } = await uploadOrganizationLogo(file);
+      if (data?.logoUrl) setLogoUrl(data.logoUrl);
+      toast.success(message || "Logo uploaded successfully.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not upload the logo."));
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const saveWorkflow = async () => {
+    if (statusFlow.length < 2) {
+      toast.error("Pick at least two statuses for the task flow");
+      return;
+    }
+
+    setSavingWorkflow(true);
+    try {
+      const { message } = await updateOrganizationSettings({
+        workflow: { approvalRequired, defaultPriority, statusFlow },
+      });
+      toast.success(message || "Workflow settings saved.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not save the workflow rules."));
+    } finally {
+      setSavingWorkflow(false);
+    }
+  };
+
+  const saveSecurity = async () => {
+    setSavingSecurity(true);
+    try {
+      const { message } = await updateOrganizationSettings({ security });
+      toast.success(message || "Security settings saved.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Could not save the security policy."));
+    } finally {
+      setSavingSecurity(false);
+    }
+  };
 
   const copyOrgId = async () => {
     try {
@@ -188,16 +354,83 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="org-industry">Industry</Label>
+                  <Input
+                    id="org-industry"
+                    value={profile.industry}
+                    onChange={(e) =>
+                      setProfile({ ...profile, industry: e.target.value })
+                    }
+                    placeholder="Software"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="org-website">Website</Label>
+                  <Input
+                    id="org-website"
+                    type="url"
+                    value={profile.website}
+                    onChange={(e) =>
+                      setProfile({ ...profile, website: e.target.value })
+                    }
+                    placeholder="https://abctech.io"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="org-email">Contact email</Label>
+                  <Input
+                    id="org-email"
+                    type="email"
+                    value={profile.email}
+                    onChange={(e) =>
+                      setProfile({ ...profile, email: e.target.value })
+                    }
+                    placeholder="contact@abctech.io"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="org-phone">Phone number</Label>
+                  <Input
+                    id="org-phone"
+                    type="tel"
+                    value={profile.phoneNumber}
+                    onChange={(e) =>
+                      setProfile({ ...profile, phoneNumber: e.target.value })
+                    }
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="org-logo">Logo</Label>
                 <div className="flex items-center gap-3">
-                  <span className="grid size-12 shrink-0 place-items-center rounded-lg bg-[#2d5a4c] text-lg font-bold text-white">
-                    {orgName[0]?.toUpperCase() ?? "T"}
-                  </span>
-                  <Input id="org-logo" type="file" accept="image/*" />
+                  {logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- remote host is not known at build time
+                    <img
+                      src={logoUrl}
+                      alt={`${orgName} logo`}
+                      className="size-12 shrink-0 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <span className="grid size-12 shrink-0 place-items-center rounded-lg bg-[#2d5a4c] text-lg font-bold text-white">
+                      {orgName[0]?.toUpperCase() ?? "T"}
+                    </span>
+                  )}
+                  <Input
+                    id="org-logo"
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingLogo}
+                    onChange={(e) => uploadLogo(e.target.files?.[0])}
+                  />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Square PNG or SVG, at least 256×256.
+                  {uploadingLogo
+                    ? "Uploading…"
+                    : "Square PNG or SVG, at least 256×256. Uploads as soon as you pick a file."}
                 </p>
               </div>
 
@@ -209,8 +442,8 @@ export default function SettingsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {TIMEZONES.map((tz) => (
-                      <SelectItem key={tz} value={tz}>
-                        {tz}
+                      <SelectItem key={tz.value} value={tz.value}>
+                        {tz.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -242,9 +475,10 @@ export default function SettingsPage() {
 
               <Button
                 className="bg-[#2d5a4c] hover:bg-[#234539]"
-                onClick={() => toast.success("Organization settings saved")}
+                onClick={saveOrganization}
+                disabled={savingOrganization}
               >
-                Save organization
+                {savingOrganization ? "Saving…" : "Save organization"}
               </Button>
             </CardContent>
           </Card>
@@ -344,9 +578,10 @@ export default function SettingsPage() {
 
               <Button
                 className="bg-[#2d5a4c] hover:bg-[#234539]"
-                onClick={() => toast.success("Workflow settings saved")}
+                onClick={saveWorkflow}
+                disabled={savingWorkflow}
               >
-                Save workflow
+                {savingWorkflow ? "Saving…" : "Save workflow"}
               </Button>
             </CardContent>
           </Card>
@@ -427,9 +662,10 @@ export default function SettingsPage() {
 
               <Button
                 className="bg-[#2d5a4c] hover:bg-[#234539]"
-                onClick={() => toast.success("Security settings saved")}
+                onClick={saveSecurity}
+                disabled={savingSecurity}
               >
-                Save security
+                {savingSecurity ? "Saving…" : "Save security"}
               </Button>
             </CardContent>
           </Card>

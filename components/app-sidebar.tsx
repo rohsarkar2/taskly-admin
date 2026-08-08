@@ -40,11 +40,8 @@ import {
   setUser,
   setOrganization,
 } from "@/lib/redux/slices/userSlice";
-import {
-  getAdminDetails,
-  getOrganization,
-  logout as logoutRequest,
-} from "@/lib/api/auth";
+import { getAdminDetails, logout as logoutRequest } from "@/lib/api/auth";
+import { getOrganization } from "@/lib/api/organization";
 import { toast } from "sonner";
 import {
   initialsOf,

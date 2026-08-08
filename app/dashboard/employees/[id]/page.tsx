@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { CheckCircle2, Clock, ListTodo, Timer } from "lucide-react";
 import {
   Card,
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -28,12 +28,15 @@ import {
   EmptyState,
   PageHeader,
   PriorityBadge,
-  ProjectStatusBadge,
   RoleBadge,
+  SampleDataNotice,
   StatGrid,
   StatTile,
   TaskStatusBadge,
 } from "@/components/dashboard/ui-bits";
+import { toEmployee } from "@/lib/api/adapters";
+import { getEmployee } from "@/lib/api/employees";
+import type { EmployeeProjectSummary, EmployeeStats } from "@/lib/api/types";
 import {
   employeeById,
   formatDate,
@@ -42,10 +45,26 @@ import {
   organizationSettings,
   projectById,
   projectNameOf,
-  tasks,
-  taskStatusBreakdown,
-  daysBetween,
+  tasks as seedTasks,
 } from "@/lib/mock-data";
+import {
+  PRIORITIES,
+  TASK_STATUSES,
+  type Employee,
+  type Priority,
+  type TaskStatus,
+} from "@/lib/types";
+
+/** The subset of a task this page renders, whatever the tasks API returns. */
+interface DetailTask {
+  id: string;
+  title: string;
+  projectName: string;
+  status: TaskStatus;
+  priority: Priority;
+  dueDate: string | null;
+  overdue: boolean;
+}
 
 export default function EmployeeProfilePage({
   params,
@@ -54,34 +73,95 @@ export default function EmployeeProfilePage({
 }) {
   // Route params are Promises in Next.js 16; `use` unwraps them in a Client Component.
   const { id } = React.use(params);
-  const employee = employeeById(id);
 
-  if (!employee) notFound();
+  const [employee, setEmployee] = React.useState<Employee | null>(null);
+  const [stats, setStats] = React.useState<EmployeeStats | null>(null);
+  const [projects, setProjects] = React.useState<EmployeeProjectSummary[]>([]);
+  const [tasks, setTasks] = React.useState<DetailTask[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [usingSampleData, setUsingSampleData] = React.useState(false);
+  const [notFound, setNotFound] = React.useState(false);
 
-  const assigned = tasks.filter((t) => t.assigneeId === employee.id);
-  const created = tasks.filter((t) => t.creatorId === employee.id);
-  const approving = tasks.filter(
-    (t) => t.approverId === employee.id && t.status === "Pending Approval",
-  );
+  /** Bumped to re-run the load effect from the Retry button. */
+  const [reloadKey, setReloadKey] = React.useState(0);
 
-  const completedTasks = assigned.filter((t) => t.status === "Completed");
-  const pending = assigned.filter(
-    (t) => t.status !== "Completed" && t.status !== "Rejected",
-  );
-  const overdue = assigned.filter(isOverdue);
+  React.useEffect(() => {
+    let cancelled = false;
 
-  const avgDays = completedTasks.length
-    ? Math.round(
-        (completedTasks.reduce(
-          (sum, t) => sum + daysBetween(t.createdAt, t.completedAt!),
-          0,
-        ) /
-          completedTasks.length) *
-          10,
-      ) / 10
-    : 0;
+    const load = async () => {
+      try {
+        const { data } = await getEmployee(id);
+        if (cancelled) return;
 
-  const breakdown = taskStatusBreakdown(assigned);
+        setEmployee(toEmployee(data.employee));
+        setStats(data.stats ?? null);
+        setProjects(data.projects ?? []);
+        setTasks(
+          (data.tasks ?? []).map(toDetailTask).filter(Boolean) as DetailTask[],
+        );
+        setUsingSampleData(false);
+        setNotFound(false);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to load employee:", error);
+
+        // Fall back to the fixtures so the page stays reviewable while the
+        // endpoint is being built — but only if this id exists there.
+        const seeded = employeeById(id);
+        if (!seeded) {
+          setNotFound(true);
+        } else {
+          setEmployee(seeded);
+          setStats(null);
+          setProjects(seededProjectsFor(seeded));
+          setTasks(seededTasksFor(seeded.id));
+          setUsingSampleData(true);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, reloadKey]);
+
+  const refresh = () => {
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
+
+  if (loading) return <ProfileSkeleton />;
+
+  if (notFound || !employee) {
+    return (
+      <>
+        <PageHeader
+          title="Employee not found"
+          backHref="/dashboard/employees"
+          backLabel="Employees"
+        />
+        <EmptyState
+          title="No employee with this id"
+          description="They may have been removed from the organization."
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/dashboard/employees">Back to employees</Link>
+            </Button>
+          }
+        />
+      </>
+    );
+  }
+
+  // Prefer the server's roll-up; derive from the task list when it is absent.
+  const derived = deriveStats(tasks);
+  const summary: EmployeeStats = stats ?? derived;
+
+  const breakdown = countByStatus(tasks);
+  const firstName = employee.name.split(" ")[0];
 
   return (
     <>
@@ -96,6 +176,13 @@ export default function EmployeeProfilePage({
           </Button>
         }
       />
+
+      {usingSampleData && (
+        <SampleDataNotice
+          message="Could not reach the employees API — showing sample data for this profile."
+          onRetry={refresh}
+        />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Profile */}
@@ -130,7 +217,7 @@ export default function EmployeeProfilePage({
                 {employee.phone ?? "—"}
               </DefinitionRow>
               <DefinitionRow label="Registered">
-                {formatDate(employee.registeredAt)}
+                {employee.registeredAt ? formatDate(employee.registeredAt) : "—"}
               </DefinitionRow>
               <DefinitionRow label="Joined">
                 {employee.joinedAt ? formatDate(employee.joinedAt) : "—"}
@@ -146,61 +233,57 @@ export default function EmployeeProfilePage({
           <StatGrid>
             <StatTile
               label="Assigned Tasks"
-              value={assigned.length}
+              value={summary.assigned}
               icon={ListTodo}
-              hint={`${created.length} created by them`}
+              hint={`${projects.length} project${projects.length === 1 ? "" : "s"}`}
             />
             <StatTile
               label="Completed"
-              value={completedTasks.length}
+              value={summary.completed}
               icon={CheckCircle2}
               accent="var(--viz-good)"
               hint={
-                assigned.length
-                  ? `${Math.round((completedTasks.length / assigned.length) * 100)}% completion rate`
+                summary.assigned
+                  ? `${summary.completionRate}% completion rate`
                   : "No tasks yet"
               }
             />
             <StatTile
               label="Pending"
-              value={pending.length}
+              value={summary.pending}
               icon={Clock}
               accent="var(--viz-warning)"
-              hint={`${approving.length} awaiting their approval`}
+              hint={`${summary.overdue} overdue`}
             />
             <StatTile
               label="Avg. Completion"
-              value={avgDays ? `${avgDays}d` : "—"}
+              value={
+                summary.avgCompletionDays ? `${summary.avgCompletionDays}d` : "—"
+              }
               icon={Timer}
               accent="var(--viz-2)"
-              hint={`${overdue.length} overdue`}
+              hint="Creation to approval"
             />
           </StatGrid>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Workload breakdown</CardTitle>
-              <CardDescription>
-                Status of the {assigned.length} tasks assigned to{" "}
-                {employee.name.split(" ")[0]}.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <StackedBar
-                segments={[
-                  { label: "To Do", value: breakdown["To Do"] },
-                  { label: "In Progress", value: breakdown["In Progress"] },
-                  {
-                    label: "Pending Approval",
-                    value: breakdown["Pending Approval"],
-                  },
-                  { label: "Blocked", value: breakdown.Blocked },
-                  { label: "Completed", value: breakdown.Completed },
-                  { label: "Rejected", value: breakdown.Rejected },
-                ]}
-              />
-            </CardContent>
-          </Card>
+          {tasks.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Workload breakdown</CardTitle>
+                <CardDescription>
+                  Status of the {tasks.length} tasks assigned to {firstName}.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <StackedBar
+                  segments={TASK_STATUSES.map((status) => ({
+                    label: status,
+                    value: breakdown[status],
+                  }))}
+                />
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -209,45 +292,33 @@ export default function EmployeeProfilePage({
         <CardHeader>
           <CardTitle>Assigned projects</CardTitle>
           <CardDescription>
-            {employee.name.split(" ")[0]} can only open these from the mobile
-            app.
+            {firstName} can only open these from the mobile app.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {employee.projectIds.length === 0 ? (
+          {projects.length === 0 ? (
             <EmptyState
               title="Not on any project yet"
               description="Add them from a project's Members tab."
             />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {employee.projectIds.map((projectId) => {
-                const project = projectById(projectId);
-                if (!project) return null;
-                const role = project.managerIds.includes(employee.id)
-                  ? "Manager"
-                  : project.leadIds.includes(employee.id)
-                    ? "Team Lead"
-                    : "Member";
-
-                return (
-                  <Link
-                    key={projectId}
-                    href={`/dashboard/projects/${projectId}`}
-                    className="rounded-lg border p-3 transition-colors hover:border-foreground/20"
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium">
-                        {project.name}
-                      </p>
-                      <ProjectStatusBadge status={project.status} />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {role} · deadline {formatDate(project.deadline)}
-                    </p>
-                  </Link>
-                );
-              })}
+              {projects.map((project) => (
+                <Link
+                  key={project.id}
+                  href={`/dashboard/projects/${project.id}`}
+                  className="rounded-lg border p-3 transition-colors hover:border-foreground/20"
+                >
+                  <p className="mb-1 truncate text-sm font-medium">
+                    {project.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {project.roleInProject ?? "Member"}
+                    {project.deadline &&
+                      ` · deadline ${formatDate(project.deadline)}`}
+                  </p>
+                </Link>
+              ))}
             </div>
           )}
         </CardContent>
@@ -262,7 +333,7 @@ export default function EmployeeProfilePage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {assigned.length === 0 ? (
+          {tasks.length === 0 ? (
             <EmptyState title="No tasks assigned" />
           ) : (
             <div className="overflow-x-auto">
@@ -277,7 +348,7 @@ export default function EmployeeProfilePage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {assigned.map((task) => (
+                  {tasks.map((task) => (
                     <TableRow key={task.id}>
                       <TableCell className="max-w-[20rem]">
                         <Link
@@ -288,19 +359,19 @@ export default function EmployeeProfilePage({
                         </Link>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {projectNameOf(task.projectId)}
+                        {task.projectName}
                       </TableCell>
                       <TableCell>
                         <TaskStatusBadge
                           status={task.status}
-                          overdue={isOverdue(task)}
+                          overdue={task.overdue}
                         />
                       </TableCell>
                       <TableCell>
                         <PriorityBadge priority={task.priority} />
                       </TableCell>
                       <TableCell className="text-right text-xs whitespace-nowrap">
-                        {formatDate(task.dueDate)}
+                        {task.dueDate ? formatDate(task.dueDate) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -312,4 +383,113 @@ export default function EmployeeProfilePage({
       </Card>
     </>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function ProfileSkeleton() {
+  return (
+    <div className="space-y-6">
+      <Skeleton className="h-10 w-64" />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Skeleton className="h-72 w-full" />
+        <Skeleton className="h-72 w-full lg:col-span-2" />
+      </div>
+      <Skeleton className="h-64 w-full" />
+    </div>
+  );
+}
+
+/** Reads only the fields this page renders, so an unexpected task shape degrades. */
+function toDetailTask(raw: unknown): DetailTask | null {
+  if (!raw || typeof raw !== "object") return null;
+  const task = raw as Record<string, unknown>;
+  const id = typeof task.id === "string" ? task.id : null;
+  if (!id) return null;
+
+  const status = TASK_STATUSES.find((value) => value === task.status);
+  const priority = PRIORITIES.find((value) => value === task.priority);
+  const dueDate = typeof task.dueDate === "string" ? task.dueDate.slice(0, 10) : null;
+
+  const projectName =
+    typeof task.projectName === "string"
+      ? task.projectName
+      : typeof task.projectId === "string"
+        ? projectNameOf(task.projectId)
+        : "—";
+
+  return {
+    id,
+    title: typeof task.title === "string" ? task.title : "Untitled task",
+    projectName,
+    status: status ?? "To Do",
+    priority: priority ?? "Medium",
+    dueDate,
+    overdue: typeof task.isOverdue === "boolean" ? task.isOverdue : false,
+  };
+}
+
+function countByStatus(tasks: DetailTask[]): Record<TaskStatus, number> {
+  const counts = Object.fromEntries(
+    TASK_STATUSES.map((status) => [status, 0]),
+  ) as Record<TaskStatus, number>;
+
+  for (const task of tasks) counts[task.status] += 1;
+  return counts;
+}
+
+function deriveStats(tasks: DetailTask[]): EmployeeStats {
+  const completed = tasks.filter((t) => t.status === "Completed").length;
+  const pending = tasks.filter(
+    (t) => t.status !== "Completed" && t.status !== "Rejected",
+  ).length;
+
+  return {
+    assigned: tasks.length,
+    completed,
+    pending,
+    overdue: tasks.filter((t) => t.overdue).length,
+    completionRate: tasks.length
+      ? Math.round((completed / tasks.length) * 100)
+      : 0,
+  };
+}
+
+/* Fixture fallbacks -------------------------------------------------------- */
+
+function seededProjectsFor(employee: Employee): EmployeeProjectSummary[] {
+  return employee.projectIds.flatMap((projectId) => {
+    const project = projectById(projectId);
+    if (!project) return [];
+
+    return [
+      {
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        deadline: project.deadline,
+        roleInProject: project.managerIds.includes(employee.id)
+          ? "Manager"
+          : project.leadIds.includes(employee.id)
+            ? "Team Lead"
+            : "Member",
+      },
+    ];
+  });
+}
+
+function seededTasksFor(employeeId: string): DetailTask[] {
+  return seedTasks
+    .filter((task) => task.assigneeId === employeeId)
+    .map((task) => ({
+      id: task.id,
+      title: task.title,
+      projectName: projectNameOf(task.projectId),
+      status: task.status,
+      priority: task.priority,
+      dueDate: task.dueDate,
+      overdue: isOverdue(task),
+    }));
 }

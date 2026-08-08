@@ -54,8 +54,129 @@ export interface Organization {
   name: string;
   uniqueOrganizationId: string;
   organizationSize: string;
-  logo?: string | null;
+  industry?: string | null;
+  website?: string | null;
+  email?: string | null;
+  phoneNumber?: string | null;
+  logoUrl?: string | null;
+  /** IANA identifier, e.g. `Asia/Kolkata`. */
+  timezone?: string | null;
+  workingDays?: string[];
+  createdAt?: string;
   isActive?: boolean;
+}
+
+/** `GET /admin/settings` — organization-wide defaults. */
+export interface OrganizationSettingsPayload {
+  name: string;
+  uniqueOrganizationId: string;
+  logoUrl: string | null;
+  timezone: string;
+  workingDays: string[];
+  workflow: {
+    approvalRequired: boolean;
+    defaultPriority: string;
+    statusFlow: string[];
+  };
+  security: {
+    minPasswordLength: number;
+    requireNumber: boolean;
+    requireUppercase: boolean;
+    requireSymbol: boolean;
+    sessionTimeoutMinutes: number;
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Employees                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * An employee as the API sends it. Narrower than the app's `Employee` type —
+ * `lib/api/adapters.ts` fills in the presentation-only fields.
+ */
+export interface ApiEmployee {
+  id: string;
+  name: string;
+  email: string;
+  /** snake_case enum, e.g. `team_lead`. */
+  role: string;
+  /** lowercase enum, e.g. `active`. */
+  status: string;
+  userType?: string;
+  /** The spec's names. */
+  registeredAt?: string;
+  joinedAt?: string | null;
+  /** What the server actually sends (ISO timestamps). */
+  createdAt?: string;
+  approvedAt?: string | null;
+  lastLoginAt?: string | null;
+  phone?: string | null;
+  phoneNumber?: string | null;
+  jobTitle?: string | null;
+  designation?: string | null;
+  department?: string | null;
+  avatar?: string | null;
+  organizationId?: string;
+  organizationName?: string;
+  uniqueOrganizationId?: string;
+  projectIds?: string[];
+}
+
+export interface EmployeeStats {
+  assigned: number;
+  completed: number;
+  pending: number;
+  overdue: number;
+  completionRate: number;
+  avgCompletionDays?: number;
+}
+
+export interface EmployeeProjectSummary {
+  id: string;
+  name: string;
+  status: string;
+  deadline?: string;
+  roleInProject?: string;
+}
+
+export interface EmployeeDetailData {
+  employee: ApiEmployee;
+  stats?: EmployeeStats;
+  projects?: EmployeeProjectSummary[];
+  /** Task objects; shape matches the tasks API. */
+  tasks?: unknown[];
+}
+
+export interface EmployeeData {
+  employee: ApiEmployee;
+}
+
+export interface EmployeeListParams {
+  search?: string;
+  role?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface ApproveEmployeeRequest {
+  role: string;
+}
+
+export interface RejectEmployeeRequest {
+  reason?: string;
+}
+
+/** `GET /admin/organization/summary` — headcount and project counts only. */
+export interface OrganizationSummary {
+  totalEmployees: number;
+  activeEmployees: number;
+  pendingEmployees: number;
+  totalProjects: number;
+  activeProjects: number;
+  completedProjects: number;
+  organizationCreatedAt: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -82,6 +203,38 @@ export interface OrganizationData {
   organization: Organization;
 }
 
+export interface LogoUploadData {
+  logoUrl: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Organization requests                                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface UpdateOrganizationRequest {
+  name?: string;
+  industry?: string;
+  website?: string;
+  email?: string;
+  phoneNumber?: string;
+  timezone?: string;
+}
+
+export interface UpdateSettingsRequest {
+  timezone?: string;
+  workingDays?: string[];
+  workflow?: Partial<OrganizationSettingsPayload["workflow"]>;
+  security?: Partial<OrganizationSettingsPayload["security"]>;
+}
+
+export interface UpdateProjectWorkflowRequest {
+  approvalRequired: boolean;
+  autoApprove: boolean;
+  approvers: string[];
+  adminCanApprove: boolean;
+  defaultPriority: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Requests                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -104,9 +257,29 @@ export interface ForgotPasswordRequest {
   email: string;
 }
 
+/**
+ * Outside production the raw code is echoed back so the flow is testable
+ * before a mail transport exists. Never present in production.
+ */
+export interface ForgotPasswordData {
+  otp?: string;
+  expiresAt: string;
+}
+
+export interface VerifyResetOtpRequest {
+  email: string;
+  otp: string;
+}
+
+/** The OTP is traded for this token; only the token can set a new password. */
+export interface VerifyResetOtpData {
+  resetToken: string;
+  expiresAt: string;
+}
+
 export interface ResetPasswordRequest {
   token: string;
-  password: string;
+  newPassword: string;
 }
 
 export interface ChangePasswordRequest {
