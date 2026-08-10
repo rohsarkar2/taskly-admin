@@ -39,6 +39,8 @@ import {
 } from "@/lib/api/notifications";
 import { formatDateTime, notifications as seed } from "@/lib/mock-data";
 import type { AppNotification, NotificationKind } from "@/lib/types";
+import { useAppDispatch } from "@/lib/redux/hooks";
+import { refreshUnreadNotifications } from "@/lib/redux/thunks/badges";
 
 const KIND_ICON: Record<
   NotificationKind,
@@ -62,6 +64,7 @@ const KIND_COLOR: Record<NotificationKind, string> = {
 };
 
 export default function NotificationsPage() {
+  const dispatch = useAppDispatch();
   const [list, setList] = React.useState<AppNotification[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [usingSampleData, setUsingSampleData] = React.useState(false);
@@ -114,6 +117,10 @@ export default function NotificationsPage() {
       setList(previous);
       toast.error(getErrorMessage(error, "Could not mark it as read."));
     }
+
+    // Outside the try: whether the write landed or rolled back, the badge
+    // should end up showing whatever the server now believes.
+    dispatch(refreshUnreadNotifications());
   };
 
   const markAllRead = async () => {
@@ -134,6 +141,8 @@ export default function NotificationsPage() {
       setList(previous);
       toast.error(getErrorMessage(error, "Could not mark them as read."));
     }
+
+    dispatch(refreshUnreadNotifications());
   };
 
   const remove = async (id: string) => {
@@ -148,6 +157,9 @@ export default function NotificationsPage() {
       setList(previous);
       toast.error(getErrorMessage(error, "Could not delete it."));
     }
+
+    // Deleting an unread notification drops the count too.
+    dispatch(refreshUnreadNotifications());
   };
 
   /** Clears everything already read, leaving the unread inbox intact. */

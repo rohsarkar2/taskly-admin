@@ -65,10 +65,13 @@ import {
   relativeToToday,
 } from "@/lib/mock-data";
 import { ROLES, type Employee, type Role } from "@/lib/types";
+import { useAppDispatch } from "@/lib/redux/hooks";
+import { fetchBadgeCounts } from "@/lib/redux/thunks/badges";
 
 type Decision = "approve" | "reject" | null;
 
 export default function EmployeeRequestsPage() {
+  const dispatch = useAppDispatch();
   const [roster, setRoster] = React.useState<Employee[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [usingSampleData, setUsingSampleData] = React.useState(false);
@@ -182,6 +185,8 @@ export default function EmployeeRequestsPage() {
         toast.success(message || `${target.name} approved as ${role}`, {
           description: "They now have access to the organization from the app.",
         });
+        // One fewer pending request — keep the sidebar badge honest.
+        dispatch(fetchBadgeCounts());
       } else {
         applyDecision(target.id, {
           status: "Active",
@@ -215,6 +220,7 @@ export default function EmployeeRequestsPage() {
         toast.success(message || `${target.name}'s request was rejected`, {
           description: reason || "No reason recorded.",
         });
+        dispatch(fetchBadgeCounts());
       } else {
         applyDecision(target.id, { status: "Rejected" });
         toast.success(`${target.name}'s request was rejected`, {

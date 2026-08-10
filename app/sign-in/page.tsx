@@ -110,7 +110,7 @@ export default function SignIn() {
   return (
     <div className="h-screen flex">
       {/* Left Side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#2d5a4c] via-[#3a6f5c] to-[#4a8570] p-12 flex-col justify-between relative overflow-hidden flex-shrink-0">
+      <div className="hidden lg:flex lg:w-1/2 bg-linear-to-br from-[#2d5a4c] via-[#3a6f5c] to-[#4a8570] p-12 flex-col justify-between relative overflow-hidden shrink-0">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 left-20 w-72 h-72 bg-white rounded-full blur-3xl" />
@@ -136,7 +136,7 @@ export default function SignIn() {
 
         <div className="relative z-10 space-y-6">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center shrink-0">
               <Users className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -149,7 +149,7 @@ export default function SignIn() {
             </div>
           </div>
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center shrink-0">
               <BarChart3 className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -165,7 +165,7 @@ export default function SignIn() {
       </div>
 
       {/* Right Side - Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gradient-to-br from-gray-50 to-white overflow-y-auto flex-shrink-0">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-linear-to-br from-gray-50 to-white overflow-y-auto shrink-0">
         <div className="w-full max-w-md">
           <div className="mb-10">
             <div className="lg:hidden flex items-center gap-2 mb-6">
@@ -263,7 +263,7 @@ export default function SignIn() {
 
             <Button
               type="submit"
-              className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
+              className="w-full h-12 bg-linear-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
               disabled={isLoading}
             >
               {isLoading ? (
