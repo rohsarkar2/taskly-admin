@@ -6,19 +6,24 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   ExpiryCountdown,
   NewPasswordForm,
 } from "@/components/auth/new-password-form";
-import { forgotPassword, getErrorMessage, verifyResetOtp } from "@/lib/api/auth";
+import {
+  forgotPassword,
+  getErrorMessage,
+  verifyResetOtp,
+} from "@/lib/api/auth";
+import {
+  Mail,
+  ArrowRight,
+  CheckCircle2,
+  Shield,
+  Clock,
+  KeyRound,
+  ArrowLeft,
+} from "lucide-react";
 
 /**
  * Password reset, in three steps.
@@ -112,61 +117,142 @@ export default function ForgotPassword() {
 
   const handleDone = useCallback(
     (message: string) => {
-      toast.success(message, { description: "Sign in with your new password." });
+      toast.success(message, {
+        description: "Sign in with your new password.",
+      });
       router.push("/sign-in");
     },
     [router],
   );
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4 py-8">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-3xl font-bold tracking-tight">
-            Reset your password
-          </CardTitle>
-          <CardDescription>
-            {step === "email" &&
-              "We will email you a six-digit verification code."}
-            {step === "otp" && `Enter the code we sent to ${email}.`}
-            {step === "password" && "Choose a password you have not used before."}
-          </CardDescription>
-        </CardHeader>
+    <div className="h-screen flex">
+      {/* Left Side - Branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#2d5a4c] via-[#3a6f5c] to-[#4a8570] p-12 flex-col justify-between relative overflow-hidden flex-shrink-0">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-20 left-20 w-72 h-72 bg-white rounded-full blur-3xl" />
+          <div className="absolute bottom-20 right-20 w-96 h-96 bg-white rounded-full blur-3xl" />
+        </div>
 
-        <CardContent className="space-y-4">
-          <StepIndicator step={step} />
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+              <CheckCircle2 className="w-7 h-7 text-white" />
+            </div>
+            <h1 className="text-3xl font-bold text-white">Taskly</h1>
+          </div>
+          <h2 className="text-4xl font-bold text-white mb-4 leading-tight">
+            Secure account
+            <br />
+            recovery
+          </h2>
+          <p className="text-lg text-white/90 max-w-md">
+            Reset your password in just a few simple steps.
+          </p>
+        </div>
+
+        <div className="relative z-10 space-y-6">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+              <Shield className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-semibold mb-1">
+                Secure verification
+              </h3>
+              <p className="text-white/80 text-sm">
+                Your identity is verified through a secure one-time code
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+              <Clock className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white font-semibold mb-1">Quick recovery</h3>
+              <p className="text-white/80 text-sm">
+                Regain access to your account in under a minute
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Side - Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gradient-to-br from-gray-50 to-white overflow-y-auto flex-shrink-0">
+        <div className="w-full max-w-md">
+          <div className="mb-10">
+            <div className="lg:hidden flex items-center gap-2 mb-6">
+              <div className="w-10 h-10 bg-[#2d5a4c] rounded-xl flex items-center justify-center">
+                <CheckCircle2 className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-gray-900">Taskly</h1>
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">
+              Reset your password
+            </h2>
+            <p className="text-gray-600">
+              {step === "email" &&
+                "We will email you a six-digit verification code."}
+              {step === "otp" && `Enter the code we sent to ${email}.`}
+              {step === "password" &&
+                "Choose a password you have not used before."}
+            </p>
+          </div>
+
+          <div className="mb-6">
+            <StepIndicator step={step} />
+          </div>
 
           {/* Step 1 — email --------------------------------------------- */}
           {step === "email" && (
-            <form className="space-y-4" onSubmit={requestCode}>
+            <form className="space-y-5" onSubmit={requestCode}>
               <div className="space-y-2">
-                <Label htmlFor="email">Email address</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  autoFocus
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your admin email"
-                />
+                <label
+                  htmlFor="email"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Email address
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    required
+                    autoFocus
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="admin@example.com"
+                    className="pl-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                  />
+                </div>
               </div>
 
               <Button
                 type="submit"
-                className="w-full bg-[#2d5a4c] hover:bg-[#234539]"
+                className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
                 disabled={isLoading}
               >
-                {isLoading ? "Sending…" : "Send verification code"}
+                {isLoading ? (
+                  "Sending…"
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    Send verification code
+                    <ArrowRight className="w-5 h-5" />
+                  </span>
+                )}
               </Button>
 
-              <div className="text-center text-sm text-muted-foreground">
+              <div className="text-center text-sm text-gray-600">
                 Remembered it?{" "}
                 <Link
                   href="/sign-in"
-                  className="font-medium text-[#2d5a4c] hover:text-[#234539]"
+                  className="font-medium text-[#2d5a4c] hover:text-[#234539] transition-colors"
                 >
                   Sign in
                 </Link>
@@ -176,59 +262,89 @@ export default function ForgotPassword() {
 
           {/* Step 2 — verification code --------------------------------- */}
           {step === "otp" && (
-            <form className="space-y-4" onSubmit={submitCode}>
+            <form className="space-y-5" onSubmit={submitCode}>
               {devOtp && (
-                <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
-                  Development only — your code is{" "}
-                  <span className="font-mono font-semibold text-foreground">
-                    {devOtp}
-                  </span>
-                </p>
+                <div className="rounded-lg border-2 border-dashed border-amber-300 bg-amber-50 p-4 text-center">
+                  <p className="text-xs text-amber-800 font-medium mb-1">
+                    Development mode only
+                  </p>
+                  <p className="text-sm text-amber-900">
+                    Your code is{" "}
+                    <span className="font-mono font-bold text-lg text-amber-950">
+                      {devOtp}
+                    </span>
+                  </p>
+                </div>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="otp">Verification code</Label>
-                <Input
-                  id="otp"
-                  name="otp"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern={`\\d{${OTP_LENGTH}}`}
-                  maxLength={OTP_LENGTH}
-                  required
-                  autoFocus
-                  value={otp}
-                  onChange={(e) =>
-                    setOtp(e.target.value.replace(/\D/g, "").slice(0, OTP_LENGTH))
-                  }
-                  placeholder="000000"
-                  className="text-center font-mono text-lg tracking-[0.6em]"
-                />
+                <label
+                  htmlFor="otp"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Verification code
+                </label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Input
+                    id="otp"
+                    name="otp"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern={`\\d{${OTP_LENGTH}}`}
+                    maxLength={OTP_LENGTH}
+                    required
+                    autoFocus
+                    value={otp}
+                    onChange={(e) =>
+                      setOtp(
+                        e.target.value.replace(/\D/g, "").slice(0, OTP_LENGTH),
+                      )
+                    }
+                    placeholder="000000"
+                    className="pl-11 h-14 text-center font-mono text-2xl tracking-[0.6em] border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                  />
+                </div>
                 {otpExpiresAt && (
-                  <ExpiryCountdown expiresAt={otpExpiresAt} label="This code" />
+                  <div className="pt-1">
+                    <ExpiryCountdown
+                      expiresAt={otpExpiresAt}
+                      label="This code"
+                    />
+                  </div>
                 )}
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-gray-500 flex items-center gap-1.5 pt-1">
+                  <Shield className="w-3.5 h-3.5" />
                   Five incorrect attempts will invalidate the code.
                 </p>
               </div>
 
               <Button
                 type="submit"
-                className="w-full bg-[#2d5a4c] hover:bg-[#234539]"
+                className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
                 disabled={isLoading || otp.length !== OTP_LENGTH}
               >
-                {isLoading ? "Verifying…" : "Verify code"}
+                {isLoading ? (
+                  "Verifying…"
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    Verify code
+                    <ArrowRight className="w-5 h-5" />
+                  </span>
+                )}
               </Button>
 
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between pt-2">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => setStep("email")}
+                  className="text-gray-600 hover:text-gray-900"
                 >
-                  ← Change email
+                  <ArrowLeft className="w-4 h-4 mr-1" />
+                  Change email
                 </Button>
                 <Button
                   type="button"
@@ -236,6 +352,7 @@ export default function ForgotPassword() {
                   size="sm"
                   onClick={() => requestCode()}
                   disabled={isLoading}
+                  className="text-[#2d5a4c] hover:text-[#234539] font-medium"
                 >
                   Resend code
                 </Button>
@@ -245,28 +362,32 @@ export default function ForgotPassword() {
 
           {/* Step 3 — new password -------------------------------------- */}
           {step === "password" && (
-            <>
+            <div className="space-y-5">
               {tokenExpiresAt && (
-                <ExpiryCountdown
-                  expiresAt={tokenExpiresAt}
-                  label="This reset window"
-                />
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+                  <ExpiryCountdown
+                    expiresAt={tokenExpiresAt}
+                    label="This reset window"
+                  />
+                </div>
               )}
               <NewPasswordForm token={resetToken} onDone={handleDone} />
-              <div className="text-center">
+              <div className="text-center pt-2">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => setStep("otp")}
+                  className="text-gray-600 hover:text-gray-900"
                 >
-                  ← Back to the code
+                  <ArrowLeft className="w-4 h-4 mr-1" />
+                  Back to the code
                 </Button>
               </div>
-            </>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
@@ -281,44 +402,81 @@ function StepIndicator({ step }: { step: Step }) {
   const currentIndex = STEPS.findIndex((s) => s.key === step);
 
   return (
-    <ol className="flex items-center gap-2" aria-label="Progress">
-      {STEPS.map((entry, index) => {
-        const state =
-          index < currentIndex
-            ? "done"
-            : index === currentIndex
-              ? "current"
-              : "upcoming";
+    <div className="w-full">
+      {/* Circles and lines */}
+      <div className="flex items-center mb-3">
+        {STEPS.map((entry, index) => {
+          const state =
+            index < currentIndex
+              ? "done"
+              : index === currentIndex
+                ? "current"
+                : "upcoming";
 
-        return (
-          <li key={entry.key} className="flex flex-1 items-center gap-2">
-            <span
-              aria-current={state === "current" ? "step" : undefined}
-              className={
-                "grid size-5 shrink-0 place-items-center rounded-full text-[0.65rem] font-semibold " +
-                (state === "upcoming"
-                  ? "bg-muted text-muted-foreground"
-                  : "bg-[#2d5a4c] text-white")
-              }
+          return (
+            <div
+              key={entry.key}
+              className="flex items-center flex-1 last:flex-none"
             >
-              {state === "done" ? "✓" : index + 1}
-            </span>
-            <span
-              className={
-                "text-xs " +
-                (state === "current"
-                  ? "font-medium text-foreground"
-                  : "text-muted-foreground")
-              }
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm transition-all duration-200 ${
+                  state === "upcoming"
+                    ? "bg-gray-200 text-gray-500"
+                    : state === "current"
+                      ? "bg-gradient-to-br from-[#2d5a4c] to-[#3a6f5c] text-white shadow-lg shadow-[#2d5a4c]/30"
+                      : "bg-[#2d5a4c] text-white"
+                }`}
+              >
+                {state === "done" ? (
+                  <CheckCircle2 className="w-5 h-5" />
+                ) : (
+                  index + 1
+                )}
+              </div>
+              {index < STEPS.length - 1 && (
+                <div className="flex-1 h-0.5 mx-3">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      index < currentIndex ? "bg-[#2d5a4c]" : "bg-gray-200"
+                    }`}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {/* Labels */}
+      <div className="flex items-center">
+        {STEPS.map((entry, index) => {
+          const state =
+            index < currentIndex
+              ? "done"
+              : index === currentIndex
+                ? "current"
+                : "upcoming";
+
+          return (
+            <div
+              key={`label-${entry.key}`}
+              className="flex items-center flex-1 last:flex-none"
             >
-              {entry.label}
-            </span>
-            {index < STEPS.length - 1 && (
-              <span aria-hidden className="h-px flex-1 bg-border" />
-            )}
-          </li>
-        );
-      })}
-    </ol>
+              <span
+                className={`w-10 text-center text-xs font-medium ${
+                  state === "current"
+                    ? "text-gray-900"
+                    : state === "done"
+                      ? "text-gray-600"
+                      : "text-gray-400"
+                }`}
+              >
+                {entry.label}
+              </span>
+              {index < STEPS.length - 1 && <div className="flex-1 mx-3" />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

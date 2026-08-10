@@ -102,6 +102,9 @@ export default function SignUp() {
           setTokens({
             accessToken: data.accessToken,
             refreshToken: data.refreshToken,
+            // Sign-up has no "Remember me" box, so this session is tab-scoped
+            // regardless of what a previous sign-in on this browser chose.
+            remember: false,
           }),
         );
         dispatch(setUser(data.user));
@@ -633,7 +636,7 @@ export default function SignUp() {
               </Button>
 
               {/* Sign In Link */}
-              <div className="relative my-6">
+              <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-300" />
                 </div>
@@ -648,7 +651,7 @@ export default function SignUp() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full h-12 border-2 border-gray-300 hover:border-[#2d5a4c] hover:text-[#2d5a4c] font-medium transition-all duration-200"
+                  className="w-full h-12 border-2 cursor-pointer border-gray-300 hover:border-[#2d5a4c] hover:text-[#2d5a4c] font-medium transition-all duration-200"
                 >
                   Sign in instead
                 </Button>

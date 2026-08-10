@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
 import { setTokens } from "@/lib/redux/slices/authSlice";
 import { setUser } from "@/lib/redux/slices/userSlice";
 import { consumeRedirect } from "@/lib/auth-redirect";
+import { getRememberedEmail, rememberEmail } from "@/lib/auth-storage";
 import {
   Mail,
   Lock,
@@ -22,16 +23,36 @@ import {
   EyeOff,
 } from "lucide-react";
 
+/**
+ * `localStorage` never changes underneath this page, so the subscribe callback
+ * has nothing to listen to — `useSyncExternalStore` is here for its hydration
+ * behaviour: render the server snapshot (`null`) first, then swap in the real
+ * value after hydration, with no mismatch and no `setState` in an effect.
+ */
+const subscribeToNothing = () => () => {};
+
 export default function SignIn() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
   const isRestored = useAppSelector((state) => state.auth.isRestored);
 
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const rememberedEmail = useSyncExternalStore(
+    subscribeToNothing,
+    getRememberedEmail,
+    () => null,
+  );
+
+  // `null` means "untouched", so the remembered values below can still show
+  // through. Once the admin types or clicks, their input wins outright —
+  // including clearing the field back to empty.
+  const [typedEmail, setTypedEmail] = useState<string | null>(null);
+  const [rememberChoice, setRememberChoice] = useState<boolean | null>(null);
+
+  const email = typedEmail ?? rememberedEmail ?? "";
+  const rememberMe = rememberChoice ?? rememberedEmail !== null;
+
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -45,23 +66,26 @@ export default function SignIn() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.email || !formData.password) {
+    if (!email || !password) {
       toast.error("Please fill in all fields");
       return;
     }
 
     setIsLoading(true);
     try {
-      const { message, data } = await login({
-        email: formData.email,
-        password: formData.password,
-      });
+      const { message, data } = await login({ email, password });
 
-      // Store tokens in Redux (which also stores in sessionStorage)
+      // Only persist the email once the credentials are known to be good —
+      // otherwise a typo would be prefilled back on the next visit.
+      rememberEmail(rememberMe ? email : null);
+
+      // Store tokens in Redux, which persists them to localStorage when
+      // remembered and sessionStorage when not.
       dispatch(
         setTokens({
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
+          remember: rememberMe,
         }),
       );
 
@@ -172,10 +196,8 @@ export default function SignIn() {
                   type="email"
                   autoComplete="email"
                   required
-                  value={formData.email}
-                  onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
-                  }
+                  value={email}
+                  onChange={(e) => setTypedEmail(e.target.value)}
                   placeholder="admin@example.com"
                   className="pl-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
                 />
@@ -197,10 +219,8 @@ export default function SignIn() {
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   required
-                  value={formData.password}
-                  onChange={(e) =>
-                    setFormData({ ...formData, password: e.target.value })
-                  }
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   className="pl-11 pr-11 h-12 border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
                 />
@@ -224,7 +244,9 @@ export default function SignIn() {
                   id="remember-me"
                   name="remember-me"
                   type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-[#2d5a4c] focus:ring-[#2d5a4c]"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberChoice(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 accent-[#2d5a4c] focus:ring-[#2d5a4c] cursor-pointer"
                 />
                 <label htmlFor="remember-me" className="text-sm text-gray-600">
                   Remember me
