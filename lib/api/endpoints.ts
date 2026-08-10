@@ -20,8 +20,8 @@ export const ADMIN_ENDPOINTS = {
   RESET_PASSWORD: "/admin/auth/reset-password",
 
   ORGANIZATION_SUMMARY: "/admin/organization/summary",
-  SETTINGS: "/admin/settings",
-  SETTINGS_LOGO: "/admin/settings/logo",
+  SETTINGS: "/admin/organization/settings",
+  SETTINGS_LOGO: "/admin/organization/logo",
 
   EMPLOYEES: "/admin/employees",
   EMPLOYEES_PENDING: "/admin/employees/pending",

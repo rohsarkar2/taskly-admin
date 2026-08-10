@@ -1,11 +1,16 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import {
+  clearStoredTokens,
+  persistTokens,
+  readTokens,
+} from "@/lib/auth-storage";
 
 interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
   /**
-   * Whether the session has been read back from `sessionStorage` yet.
+   * Whether the session has been read back from browser storage yet.
    *
    * Without this, `isAuthenticated: false` is ambiguous — it means both "signed
    * out" and "not checked yet" — and guards bounce signed-in users off deep
@@ -27,17 +32,24 @@ const authSlice = createSlice({
   reducers: {
     setTokens: (
       state,
-      action: PayloadAction<{ accessToken: string; refreshToken: string }>,
+      action: PayloadAction<{
+        accessToken: string;
+        refreshToken: string;
+        /**
+         * Omit to keep the current choice. Callers that are not the sign-in
+         * form — the refresh interceptor — must omit it, or a token refresh
+         * would quietly downgrade a remembered session to a tab-scoped one.
+         */
+        remember?: boolean;
+      }>,
     ) => {
-      state.accessToken = action.payload.accessToken;
-      state.refreshToken = action.payload.refreshToken;
+      const { accessToken, refreshToken, remember } = action.payload;
+
+      state.accessToken = accessToken;
+      state.refreshToken = refreshToken;
       state.isAuthenticated = true;
 
-      // Store in sessionStorage
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("accessToken", action.payload.accessToken);
-        sessionStorage.setItem("refreshToken", action.payload.refreshToken);
-      }
+      persistTokens({ accessToken, refreshToken }, remember);
     },
     clearTokens: (state) => {
       state.accessToken = null;
@@ -45,23 +57,16 @@ const authSlice = createSlice({
       state.isAuthenticated = false;
       state.isRestored = true;
 
-      // Clear from sessionStorage
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem("accessToken");
-        sessionStorage.removeItem("refreshToken");
-      }
+      clearStoredTokens();
     },
     restoreTokens: (state) => {
-      // Restore from sessionStorage on app load
-      if (typeof window !== "undefined") {
-        const accessToken = sessionStorage.getItem("accessToken");
-        const refreshToken = sessionStorage.getItem("refreshToken");
+      // Restore from browser storage on app load
+      const stored = readTokens();
 
-        if (accessToken && refreshToken) {
-          state.accessToken = accessToken;
-          state.refreshToken = refreshToken;
-          state.isAuthenticated = true;
-        }
+      if (stored) {
+        state.accessToken = stored.accessToken;
+        state.refreshToken = stored.refreshToken;
+        state.isAuthenticated = true;
       }
 
       // Set even when nothing was stored: the check itself is what finished.

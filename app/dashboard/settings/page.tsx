@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -39,9 +38,30 @@ import {
 import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
 import { setOrganization } from "@/lib/redux/slices/userSlice";
 import { organizationSettings } from "@/lib/mock-data";
-import { PRIORITIES, TASK_STATUSES, type Priority } from "@/lib/types";
 
 const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** Map short day names to API format (lowercase full names). */
+const DAY_TO_API: Record<string, string> = {
+  Mon: "monday",
+  Tue: "tuesday",
+  Wed: "wednesday",
+  Thu: "thursday",
+  Fri: "friday",
+  Sat: "saturday",
+  Sun: "sunday",
+};
+
+/** Map API day format back to short names for display. */
+const API_TO_DAY: Record<string, string> = {
+  monday: "Mon",
+  tuesday: "Tue",
+  wednesday: "Wed",
+  thursday: "Thu",
+  friday: "Fri",
+  saturday: "Sat",
+  sunday: "Sun",
+};
 
 /** Value is the IANA identifier the API stores; the label is for humans. */
 const TIMEZONES = [
@@ -77,24 +97,50 @@ export default function SettingsPage() {
   const [workingDays, setWorkingDays] = React.useState<string[]>(
     organizationSettings.workingDays,
   );
+  const [workingHours, setWorkingHours] = React.useState({
+    start: "09:00",
+    end: "18:00",
+  });
 
   const [savingOrganization, setSavingOrganization] = React.useState(false);
   const [savingWorkflow, setSavingWorkflow] = React.useState(false);
   const [savingSecurity, setSavingSecurity] = React.useState(false);
+  const [savingNotifications, setSavingNotifications] = React.useState(false);
 
   /* Workflow -------------------------------------------------------------- */
-  const [approvalRequired, setApprovalRequired] = React.useState(
-    organizationSettings.workflow.approvalRequired,
-  );
-  const [defaultPriority, setDefaultPriority] = React.useState<Priority>(
-    organizationSettings.workflow.defaultPriority,
-  );
-  const [statusFlow, setStatusFlow] = React.useState<string[]>(
-    organizationSettings.workflow.statusFlow,
-  );
+  const [workflow, setWorkflow] = React.useState({
+    requireTaskApproval: organizationSettings.workflow.approvalRequired,
+    defaultApproverRole: "manager" as string,
+    defaultTaskPriority: "medium" as string,
+    allowEmployeeTaskCreation: true,
+    allowEmployeeTaskDeletion: false,
+    autoApproveEmployeeRegistration: false,
+  });
 
   /* Security -------------------------------------------------------------- */
-  const [security, setSecurity] = React.useState(organizationSettings.security);
+  const [security, setSecurity] = React.useState({
+    passwordPolicy: {
+      minLength: organizationSettings.security.minPasswordLength,
+      requireUppercase: organizationSettings.security.requireUppercase,
+      requireLowercase: false,
+      requireNumber: organizationSettings.security.requireNumber,
+      requireSpecialChar: organizationSettings.security.requireSymbol,
+    },
+    sessionTimeoutMinutes: organizationSettings.security.sessionTimeoutMinutes,
+    enforceSingleSession: false,
+  });
+
+  /* Notifications --------------------------------------------------------- */
+  const [notifications, setNotifications] = React.useState({
+    employeeRegistration: true,
+    taskApprovalRequests: true,
+    projectDeadlineReminders: true,
+    overdueTasks: true,
+    projectCompletion: true,
+    reportGeneration: true,
+    emailNotifications: false,
+    pushNotifications: true,
+  });
 
   /* Change password — a real auth call, unlike the rest of this page ------- */
   const [passwords, setPasswords] = React.useState({
@@ -128,26 +174,87 @@ export default function SettingsPage() {
         setProfile({
           industry: org.industry ?? "",
           website: org.website ?? "",
-          email: org.email ?? "",
-          phoneNumber: org.phoneNumber ?? "",
+          email: org.contactEmail ?? org.email ?? "",
+          phoneNumber: org.contactPhone ?? org.phoneNumber ?? "",
         });
-        if (org.logoUrl) setLogoUrl(org.logoUrl);
+        if (org.logo) setLogoUrl(org.logo);
         if (org.timezone) setTimezone(org.timezone);
+        if (org.workingDays?.length) {
+          // Convert API format (monday) to UI format (Mon)
+          const uiDays = org.workingDays
+            .map((day: string) => API_TO_DAY[day.toLowerCase()])
+            .filter(Boolean);
+          if (uiDays.length) setWorkingDays(uiDays);
+        }
+        if (org.workingHours) setWorkingHours(org.workingHours);
       } else {
-        console.error("Failed to load organization:", organizationResult.reason);
+        console.error(
+          "Failed to load organization:",
+          organizationResult.reason,
+        );
       }
 
       if (settingsResult.status === "fulfilled") {
-        const settings = settingsResult.value.data;
+        const settings = settingsResult.value.data.settings;
         if (settings?.timezone) setTimezone(settings.timezone);
-        if (settings?.workingDays?.length) setWorkingDays(settings.workingDays);
-        if (settings?.logoUrl) setLogoUrl(settings.logoUrl);
-        if (settings?.workflow) {
-          setApprovalRequired(settings.workflow.approvalRequired);
-          setDefaultPriority(settings.workflow.defaultPriority as Priority);
-          setStatusFlow(settings.workflow.statusFlow);
+        if (settings?.workingDays?.length) {
+          // Convert API format (monday) to UI format (Mon)
+          const uiDays = settings.workingDays
+            .map((day: string) => API_TO_DAY[day.toLowerCase()])
+            .filter(Boolean);
+          if (uiDays.length) setWorkingDays(uiDays);
         }
-        if (settings?.security) setSecurity(settings.security);
+        if (settings?.workingHours) setWorkingHours(settings.workingHours);
+        if (settings?.workflow) {
+          setWorkflow({
+            requireTaskApproval:
+              settings.workflow.requireTaskApproval ??
+              workflow.requireTaskApproval,
+            defaultApproverRole:
+              settings.workflow.defaultApproverRole ??
+              workflow.defaultApproverRole,
+            defaultTaskPriority:
+              settings.workflow.defaultTaskPriority ??
+              workflow.defaultTaskPriority,
+            allowEmployeeTaskCreation:
+              settings.workflow.allowEmployeeTaskCreation ??
+              workflow.allowEmployeeTaskCreation,
+            allowEmployeeTaskDeletion:
+              settings.workflow.allowEmployeeTaskDeletion ??
+              workflow.allowEmployeeTaskDeletion,
+            autoApproveEmployeeRegistration:
+              settings.workflow.autoApproveEmployeeRegistration ??
+              workflow.autoApproveEmployeeRegistration,
+          });
+        }
+        if (settings?.security) {
+          setSecurity({
+            passwordPolicy: {
+              minLength:
+                settings.security.passwordPolicy?.minLength ??
+                security.passwordPolicy.minLength,
+              requireUppercase:
+                settings.security.passwordPolicy?.requireUppercase ??
+                security.passwordPolicy.requireUppercase,
+              requireLowercase:
+                settings.security.passwordPolicy?.requireLowercase ??
+                security.passwordPolicy.requireLowercase,
+              requireNumber:
+                settings.security.passwordPolicy?.requireNumber ??
+                security.passwordPolicy.requireNumber,
+              requireSpecialChar:
+                settings.security.passwordPolicy?.requireSpecialChar ??
+                security.passwordPolicy.requireSpecialChar,
+            },
+            sessionTimeoutMinutes:
+              settings.security.sessionTimeoutMinutes ??
+              security.sessionTimeoutMinutes,
+            enforceSingleSession:
+              settings.security.enforceSingleSession ??
+              security.enforceSingleSession,
+          });
+        }
+        if (settings?.notifications) setNotifications(settings.notifications);
       } else {
         console.error("Failed to load settings:", settingsResult.reason);
       }
@@ -157,16 +264,12 @@ export default function SettingsPage() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
   const toggleDay = (day: string, on: boolean) =>
     setWorkingDays((prev) =>
       on ? [...prev, day] : prev.filter((d) => d !== day),
-    );
-
-  const toggleStatus = (status: string, on: boolean) =>
-    setStatusFlow((prev) =>
-      on ? [...prev, status] : prev.filter((s) => s !== status),
     );
 
   /**
@@ -182,16 +285,20 @@ export default function SettingsPage() {
 
     setSavingOrganization(true);
     try {
+      // Convert UI days (Mon, Tue) to API format (monday, tuesday)
+      const apiWorkingDays = workingDays.map((day) => DAY_TO_API[day]);
+
       const [organizationResponse] = await Promise.all([
         updateOrganization({
           name: orgName,
           industry: profile.industry || undefined,
           website: profile.website || undefined,
-          email: profile.email || undefined,
-          phoneNumber: profile.phoneNumber || undefined,
+          contactEmail: profile.email || undefined,
+          contactPhone: profile.phoneNumber || undefined,
           timezone,
+          workingDays: apiWorkingDays,
+          workingHours,
         }),
-        updateOrganizationSettings({ timezone, workingDays }),
       ]);
 
       const updated = organizationResponse.data?.organization;
@@ -225,21 +332,28 @@ export default function SettingsPage() {
   };
 
   const saveWorkflow = async () => {
-    if (statusFlow.length < 2) {
-      toast.error("Pick at least two statuses for the task flow");
-      return;
-    }
-
     setSavingWorkflow(true);
     try {
-      const { message } = await updateOrganizationSettings({
-        workflow: { approvalRequired, defaultPriority, statusFlow },
-      });
+      const { message } = await updateOrganizationSettings({ workflow });
       toast.success(message || "Workflow settings saved.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Could not save the workflow rules."));
     } finally {
       setSavingWorkflow(false);
+    }
+  };
+
+  const saveNotifications = async () => {
+    setSavingNotifications(true);
+    try {
+      const { message } = await updateOrganizationSettings({ notifications });
+      toast.success(message || "Notification settings saved.");
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, "Could not save notification preferences."),
+      );
+    } finally {
+      setSavingNotifications(false);
     }
   };
 
@@ -249,7 +363,9 @@ export default function SettingsPage() {
       const { message } = await updateOrganizationSettings({ security });
       toast.success(message || "Security settings saved.");
     } catch (error) {
-      toast.error(getErrorMessage(error, "Could not save the security policy."));
+      toast.error(
+        getErrorMessage(error, "Could not save the security policy."),
+      );
     } finally {
       setSavingSecurity(false);
     }
@@ -271,9 +387,9 @@ export default function SettingsPage() {
       toast.error("New passwords do not match");
       return;
     }
-    if (passwords.next.length < security.minPasswordLength) {
+    if (passwords.next.length < security.passwordPolicy.minLength) {
       toast.error(
-        `Password must be at least ${security.minPasswordLength} characters`,
+        `Password must be at least ${security.passwordPolicy.minLength} characters`,
       );
       return;
     }
@@ -310,6 +426,7 @@ export default function SettingsPage() {
           <TabsTrigger value="organization">Organization</TabsTrigger>
           <TabsTrigger value="workflow">Workflow</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="account">Account</TabsTrigger>
         </TabsList>
 
@@ -473,6 +590,43 @@ export default function SettingsPage() {
                 </p>
               </div>
 
+              <div className="space-y-2">
+                <Label>Working hours</Label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="work-start">Start time</Label>
+                    <Input
+                      id="work-start"
+                      type="time"
+                      value={workingHours.start}
+                      onChange={(e) =>
+                        setWorkingHours({
+                          ...workingHours,
+                          start: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="work-end">End time</Label>
+                    <Input
+                      id="work-end"
+                      type="time"
+                      value={workingHours.end}
+                      onChange={(e) =>
+                        setWorkingHours({
+                          ...workingHours,
+                          end: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Standard working hours for task scheduling and reports.
+                </p>
+              </div>
+
               <Button
                 className="bg-[#2d5a4c] hover:bg-[#234539]"
                 onClick={saveOrganization}
@@ -498,7 +652,7 @@ export default function SettingsPage() {
               <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
                 <div>
                   <Label htmlFor="org-approval" className="text-sm">
-                    Require approval by default
+                    Require task approval by default
                   </Label>
                   <p className="text-xs text-muted-foreground">
                     New projects start with the approval gate switched on.
@@ -506,74 +660,120 @@ export default function SettingsPage() {
                 </div>
                 <Switch
                   id="org-approval"
-                  checked={approvalRequired}
-                  onCheckedChange={setApprovalRequired}
+                  checked={workflow.requireTaskApproval}
+                  onCheckedChange={(checked) =>
+                    setWorkflow({ ...workflow, requireTaskApproval: checked })
+                  }
                 />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                <div>
+                  <Label htmlFor="employee-task-creation" className="text-sm">
+                    Allow employee task creation
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Employees can create new tasks from the mobile app.
+                  </p>
+                </div>
+                <Switch
+                  id="employee-task-creation"
+                  checked={workflow.allowEmployeeTaskCreation}
+                  onCheckedChange={(checked) =>
+                    setWorkflow({
+                      ...workflow,
+                      allowEmployeeTaskCreation: checked,
+                    })
+                  }
+                />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                <div>
+                  <Label htmlFor="employee-task-deletion" className="text-sm">
+                    Allow employee task deletion
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Employees can delete tasks they created.
+                  </p>
+                </div>
+                <Switch
+                  id="employee-task-deletion"
+                  checked={workflow.allowEmployeeTaskDeletion}
+                  onCheckedChange={(checked) =>
+                    setWorkflow({
+                      ...workflow,
+                      allowEmployeeTaskDeletion: checked,
+                    })
+                  }
+                />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                <div>
+                  <Label
+                    htmlFor="auto-approve-registration"
+                    className="text-sm"
+                  >
+                    Auto-approve employee registration
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    New employees are approved automatically without admin
+                    review.
+                  </p>
+                </div>
+                <Switch
+                  id="auto-approve-registration"
+                  checked={workflow.autoApproveEmployeeRegistration}
+                  onCheckedChange={(checked) =>
+                    setWorkflow({
+                      ...workflow,
+                      autoApproveEmployeeRegistration: checked,
+                    })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="default-approver">Default approver role</Label>
+                <Select
+                  value={workflow.defaultApproverRole}
+                  onValueChange={(value) =>
+                    setWorkflow({ ...workflow, defaultApproverRole: value })
+                  }
+                >
+                  <SelectTrigger
+                    id="default-approver"
+                    className="w-full sm:w-56"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="team_lead">Team Lead</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="org-priority">Default task priority</Label>
                 <Select
-                  value={defaultPriority}
-                  onValueChange={(v) => setDefaultPriority(v as Priority)}
+                  value={workflow.defaultTaskPriority}
+                  onValueChange={(value) =>
+                    setWorkflow({ ...workflow, defaultTaskPriority: value })
+                  }
                 >
                   <SelectTrigger id="org-priority" className="w-full sm:w-56">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {PRIORITIES.map((priority) => (
-                      <SelectItem key={priority} value={priority}>
-                        {priority}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <Label>Task status flow</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Statuses employees can move a task through in the app.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  {TASK_STATUSES.map((status) => (
-                    <div key={status} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`status-${status}`}
-                        checked={statusFlow.includes(status)}
-                        onCheckedChange={(checked) =>
-                          toggleStatus(status, checked === true)
-                        }
-                      />
-                      <Label htmlFor={`status-${status}`} className="text-sm">
-                        {status}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 rounded-lg border p-3">
-                  {statusFlow.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">
-                      Pick at least two statuses.
-                    </span>
-                  ) : (
-                    statusFlow.map((status, i) => (
-                      <React.Fragment key={status}>
-                        <Badge variant="secondary">{status}</Badge>
-                        {i < statusFlow.length - 1 && (
-                          <span
-                            aria-hidden
-                            className="text-xs text-muted-foreground"
-                          >
-                            →
-                          </span>
-                        )}
-                      </React.Fragment>
-                    ))
-                  )}
-                </div>
               </div>
 
               <Button
@@ -605,11 +805,14 @@ export default function SettingsPage() {
                   type="number"
                   min={6}
                   max={32}
-                  value={security.minPasswordLength}
+                  value={security.passwordPolicy.minLength}
                   onChange={(e) =>
                     setSecurity({
                       ...security,
-                      minPasswordLength: Number(e.target.value),
+                      passwordPolicy: {
+                        ...security.passwordPolicy,
+                        minLength: Number(e.target.value),
+                      },
                     })
                   }
                   className="w-full sm:w-32"
@@ -619,16 +822,23 @@ export default function SettingsPage() {
               {(
                 [
                   ["requireUppercase", "Require an uppercase letter"],
+                  ["requireLowercase", "Require a lowercase letter"],
                   ["requireNumber", "Require a number"],
-                  ["requireSymbol", "Require a symbol"],
+                  ["requireSpecialChar", "Require a special character"],
                 ] as const
               ).map(([key, label]) => (
                 <div key={key} className="flex items-center gap-2">
                   <Checkbox
                     id={key}
-                    checked={security[key]}
+                    checked={security.passwordPolicy[key]}
                     onCheckedChange={(checked) =>
-                      setSecurity({ ...security, [key]: checked === true })
+                      setSecurity({
+                        ...security,
+                        passwordPolicy: {
+                          ...security.passwordPolicy,
+                          [key]: checked === true,
+                        },
+                      })
                     }
                   />
                   <Label htmlFor={key} className="text-sm">
@@ -636,6 +846,24 @@ export default function SettingsPage() {
                   </Label>
                 </div>
               ))}
+
+              <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                <div>
+                  <Label htmlFor="single-session" className="text-sm">
+                    Enforce single session
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Users are logged out from other devices when signing in.
+                  </p>
+                </div>
+                <Switch
+                  id="single-session"
+                  checked={security.enforceSingleSession}
+                  onCheckedChange={(checked) =>
+                    setSecurity({ ...security, enforceSingleSession: checked })
+                  }
+                />
+              </div>
 
               <div className="space-y-2">
                 <Label htmlFor="session-timeout">
@@ -666,6 +894,129 @@ export default function SettingsPage() {
                 disabled={savingSecurity}
               >
                 {savingSecurity ? "Saving…" : "Save security"}
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Notifications --------------------------------------------------- */}
+        <TabsContent value="notifications" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Notification preferences</CardTitle>
+              <CardDescription>
+                Control which events trigger notifications to admins.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {(
+                [
+                  [
+                    "employeeRegistration",
+                    "Employee registration",
+                    "Notify when a new employee registers from the mobile app.",
+                  ],
+                  [
+                    "taskApprovalRequests",
+                    "Task approval requests",
+                    "Notify when a task is submitted for approval.",
+                  ],
+                  [
+                    "projectDeadlineReminders",
+                    "Project deadline reminders",
+                    "Notify about upcoming project deadlines.",
+                  ],
+                  [
+                    "overdueTasks",
+                    "Overdue tasks",
+                    "Notify when tasks become overdue.",
+                  ],
+                  [
+                    "projectCompletion",
+                    "Project completion",
+                    "Notify when a project is marked as complete.",
+                  ],
+                  [
+                    "reportGeneration",
+                    "Report generation",
+                    "Notify when scheduled reports are ready.",
+                  ],
+                ] as const
+              ).map(([key, title, description]) => (
+                <div
+                  key={key}
+                  className="flex items-start justify-between gap-4 rounded-lg border p-3"
+                >
+                  <div>
+                    <Label htmlFor={key} className="text-sm">
+                      {title}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {description}
+                    </p>
+                  </div>
+                  <Switch
+                    id={key}
+                    checked={notifications[key]}
+                    onCheckedChange={(checked) =>
+                      setNotifications({ ...notifications, [key]: checked })
+                    }
+                  />
+                </div>
+              ))}
+
+              <div className="space-y-3 rounded-lg border p-4">
+                <Label className="text-base font-semibold">
+                  Delivery methods
+                </Label>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <Label htmlFor="email-notifications" className="text-sm">
+                      Email notifications
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Send notifications via email.
+                    </p>
+                  </div>
+                  <Switch
+                    id="email-notifications"
+                    checked={notifications.emailNotifications}
+                    onCheckedChange={(checked) =>
+                      setNotifications({
+                        ...notifications,
+                        emailNotifications: checked,
+                      })
+                    }
+                  />
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <Label htmlFor="push-notifications" className="text-sm">
+                      Push notifications
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Send in-app push notifications.
+                    </p>
+                  </div>
+                  <Switch
+                    id="push-notifications"
+                    checked={notifications.pushNotifications}
+                    onCheckedChange={(checked) =>
+                      setNotifications({
+                        ...notifications,
+                        pushNotifications: checked,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <Button
+                className="bg-[#2d5a4c] hover:bg-[#234539]"
+                onClick={saveNotifications}
+                disabled={savingNotifications}
+              >
+                {savingNotifications ? "Saving…" : "Save notifications"}
               </Button>
             </CardContent>
           </Card>
@@ -708,10 +1059,15 @@ export default function SettingsPage() {
                     }
                   />
                   <p className="text-xs text-muted-foreground">
-                    At least {security.minPasswordLength} characters
-                    {security.requireUppercase && ", one uppercase letter"}
-                    {security.requireNumber && ", one number"}
-                    {security.requireSymbol && ", one symbol"}.
+                    At least {security.passwordPolicy.minLength} characters
+                    {security.passwordPolicy.requireUppercase &&
+                      ", one uppercase letter"}
+                    {security.passwordPolicy.requireLowercase &&
+                      ", one lowercase letter"}
+                    {security.passwordPolicy.requireNumber && ", one number"}
+                    {security.passwordPolicy.requireSpecialChar &&
+                      ", one special character"}
+                    .
                   </p>
                 </div>
                 <div className="space-y-2">

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getErrorMessage, resetPassword } from "@/lib/api/auth";
+import { Eye, EyeOff } from "lucide-react";
 
 export function NewPasswordForm({
   token,
@@ -21,6 +22,8 @@ export function NewPasswordForm({
   const [password, setPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -55,31 +58,59 @@ export function NewPasswordForm({
     <form className="space-y-4" onSubmit={handleSubmit}>
       <div className="space-y-2">
         <Label htmlFor="new-password">New password</Label>
-        <Input
-          id="new-password"
-          name="newPassword"
-          type="password"
-          autoComplete="new-password"
-          required
-          autoFocus
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder={`At least ${minLength} characters`}
-        />
+        <div className="relative">
+          <Input
+            id="new-password"
+            name="newPassword"
+            type={showPassword ? "text" : "password"}
+            autoComplete="new-password"
+            required
+            autoFocus
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={`At least ${minLength} characters`}
+            className="pr-10"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+          >
+            {showPassword ? (
+              <EyeOff className="w-5 h-5" />
+            ) : (
+              <Eye className="w-5 h-5" />
+            )}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="confirm-new-password">Confirm new password</Label>
-        <Input
-          id="confirm-new-password"
-          name="confirmPassword"
-          type="password"
-          autoComplete="new-password"
-          required
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="Re-enter the password"
-        />
+        <div className="relative">
+          <Input
+            id="confirm-new-password"
+            name="confirmPassword"
+            type={showConfirmPassword ? "text" : "password"}
+            autoComplete="new-password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Re-enter the password"
+            className="pr-10"
+          />
+          <button
+            type="button"
+            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+          >
+            {showConfirmPassword ? (
+              <EyeOff className="w-5 h-5" />
+            ) : (
+              <Eye className="w-5 h-5" />
+            )}
+          </button>
+        </div>
       </div>
 
       <p className="text-xs text-muted-foreground">

@@ -57,33 +57,60 @@ export interface Organization {
   industry?: string | null;
   website?: string | null;
   email?: string | null;
+  contactEmail?: string | null;
   phoneNumber?: string | null;
+  contactPhone?: string | null;
+  logo?: string | null;
   logoUrl?: string | null;
   /** IANA identifier, e.g. `Asia/Kolkata`. */
   timezone?: string | null;
   workingDays?: string[];
+  workingHours?: {
+    start: string;
+    end: string;
+  };
   createdAt?: string;
   isActive?: boolean;
 }
 
-/** `GET /admin/settings` — organization-wide defaults. */
+/** `GET /admin/organization/settings` — organization-wide defaults. */
 export interface OrganizationSettingsPayload {
-  name: string;
-  uniqueOrganizationId: string;
-  logoUrl: string | null;
-  timezone: string;
-  workingDays: string[];
-  workflow: {
-    approvalRequired: boolean;
-    defaultPriority: string;
-    statusFlow: string[];
-  };
-  security: {
-    minPasswordLength: number;
-    requireNumber: boolean;
-    requireUppercase: boolean;
-    requireSymbol: boolean;
-    sessionTimeoutMinutes: number;
+  settings: {
+    workflow: {
+      requireTaskApproval: boolean;
+      defaultApproverRole: string;
+      defaultTaskPriority: string;
+      allowEmployeeTaskCreation: boolean;
+      allowEmployeeTaskDeletion: boolean;
+      autoApproveEmployeeRegistration: boolean;
+    };
+    security: {
+      passwordPolicy: {
+        minLength: number;
+        requireUppercase: boolean;
+        requireLowercase: boolean;
+        requireNumber: boolean;
+        requireSpecialChar: boolean;
+      };
+      sessionTimeoutMinutes: number;
+      enforceSingleSession: boolean;
+    };
+    notifications: {
+      employeeRegistration: boolean;
+      taskApprovalRequests: boolean;
+      projectDeadlineReminders: boolean;
+      overdueTasks: boolean;
+      projectCompletion: boolean;
+      reportGeneration: boolean;
+      emailNotifications: boolean;
+      pushNotifications: boolean;
+    };
+    workingDays: string[];
+    workingHours: {
+      start: string;
+      end: string;
+    };
+    timezone: string;
   };
 }
 
@@ -587,15 +614,29 @@ export interface UpdateOrganizationRequest {
   industry?: string;
   website?: string;
   email?: string;
+  contactEmail?: string;
   phoneNumber?: string;
+  contactPhone?: string;
   timezone?: string;
+  workingDays?: string[];
+  workingHours?: {
+    start: string;
+    end: string;
+  };
 }
 
 export interface UpdateSettingsRequest {
   timezone?: string;
   workingDays?: string[];
-  workflow?: Partial<OrganizationSettingsPayload["workflow"]>;
-  security?: Partial<OrganizationSettingsPayload["security"]>;
+  workingHours?: {
+    start: string;
+    end: string;
+  };
+  workflow?: Partial<OrganizationSettingsPayload["settings"]["workflow"]>;
+  security?: Partial<OrganizationSettingsPayload["settings"]["security"]>;
+  notifications?: Partial<
+    OrganizationSettingsPayload["settings"]["notifications"]
+  >;
 }
 
 export interface UpdateProjectWorkflowRequest {
