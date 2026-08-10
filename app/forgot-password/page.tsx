@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -18,7 +19,6 @@ import {
 import {
   Mail,
   ArrowRight,
-  CheckCircle2,
   Shield,
   Clock,
   KeyRound,
@@ -128,7 +128,7 @@ export default function ForgotPassword() {
   return (
     <div className="h-screen flex">
       {/* Left Side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-linear-to-br from-[#2d5a4c] via-[#3a6f5c] to-[#4a8570] p-12 flex-col justify-between relative overflow-hidden flex-shrink-0">
+      <div className="hidden lg:flex lg:w-1/2 bg-linear-to-br from-[#2d5a4c] via-[#3a6f5c] to-[#4a8570] p-12 flex-col justify-between relative overflow-hidden shrink-0">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 left-20 w-72 h-72 bg-white rounded-full blur-3xl" />
@@ -137,8 +137,14 @@ export default function ForgotPassword() {
 
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-              <CheckCircle2 className="w-7 h-7 text-white" />
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center">
+              <Image
+                src="/images/taskly-icon.png"
+                alt="Taskly"
+                width={48}
+                height={48}
+                className="rounded-2xl"
+              />
             </div>
             <h1 className="text-3xl font-bold text-white">Taskly</h1>
           </div>
@@ -154,7 +160,7 @@ export default function ForgotPassword() {
 
         <div className="relative z-10 space-y-6">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center shrink-0">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -167,7 +173,7 @@ export default function ForgotPassword() {
             </div>
           </div>
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+            <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center shrink-0">
               <Clock className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -181,12 +187,18 @@ export default function ForgotPassword() {
       </div>
 
       {/* Right Side - Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-gradient-to-br from-gray-50 to-white overflow-y-auto flex-shrink-0">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-linear-to-br from-gray-50 to-white overflow-y-auto shrink-0">
         <div className="w-full max-w-md">
           <div className="mb-10">
             <div className="lg:hidden flex items-center gap-2 mb-6">
-              <div className="w-10 h-10 bg-[#2d5a4c] rounded-xl flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-white" />
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center">
+                <Image
+                  src="/images/taskly-icon.png"
+                  alt="Taskly"
+                  width={40}
+                  height={40}
+                  className="rounded-xl"
+                />
               </div>
               <h1 className="text-2xl font-bold text-gray-900">Taskly</h1>
             </div>
@@ -235,7 +247,7 @@ export default function ForgotPassword() {
 
               <Button
                 type="submit"
-                className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
+                className="w-full h-12 bg-linear-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -322,7 +334,7 @@ export default function ForgotPassword() {
 
               <Button
                 type="submit"
-                className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
+                className="w-full h-12 bg-linear-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
                 disabled={isLoading || otp.length !== OTP_LENGTH}
               >
                 {isLoading ? (
@@ -423,12 +435,25 @@ function StepIndicator({ step }: { step: Step }) {
                   state === "upcoming"
                     ? "bg-gray-200 text-gray-500"
                     : state === "current"
-                      ? "bg-gradient-to-br from-[#2d5a4c] to-[#3a6f5c] text-white shadow-lg shadow-[#2d5a4c]/30"
+                      ? "bg-linear-to-br from-[#2d5a4c] to-[#3a6f5c] text-white shadow-lg shadow-[#2d5a4c]/30"
                       : "bg-[#2d5a4c] text-white"
                 }`}
               >
                 {state === "done" ? (
-                  <CheckCircle2 className="w-5 h-5" />
+                  <svg
+                    className="w-5 h-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M20 6L9 17L4 12"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 ) : (
                   index + 1
                 )}
