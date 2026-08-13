@@ -101,8 +101,6 @@ export default function DashboardClient() {
   const [reloadKey, setReloadKey] = React.useState(0);
 
   const [days, setDays] = React.useState<number>(DEFAULT_RANGE);
-  // Keyed by the slice it was fetched for, so "is this stale?" is derived rather
-  // than tracked — and the previous render stays on screen while the next loads.
   const [trendSlice, setTrendSlice] = React.useState<{
     days: number;
     key: number;
@@ -157,8 +155,6 @@ export default function DashboardClient() {
     };
   }, [reloadKey]);
 
-  // The range control only rescopes the trend, so it refetches on its own — the
-  // rest of the page never flashes back to a skeleton.
   React.useEffect(() => {
     const signal = { cancelled: false };
 
@@ -702,7 +698,6 @@ export default function DashboardClient() {
   );
 }
 
-/** One filter row above everything it scopes — never a control inside a chart card. */
 function FilterBar({
   days,
   onChange,
