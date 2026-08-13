@@ -291,8 +291,6 @@ function TasksView() {
     sortBy,
   ]);
 
-  console.log(visible);
-
   const overdueCount = list.filter(taskIsOverdue).length;
 
   const clearFilters = () => {
