@@ -3,16 +3,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-/**
- * Shared chart chrome.
- *
- * Every chart in this app pairs its marks with a legend (2+ series), direct
- * value labels and a collapsible table view — three light-mode categorical
- * slots sit under 3:1 against the white card surface, so identity is never
- * carried by fill colour alone.
- */
-
-/** Categorical slots, assigned in fixed order and never cycled. */
 export const SERIES = [
   "var(--viz-1)",
   "var(--viz-2)",
@@ -60,10 +50,6 @@ export function Legend({
   );
 }
 
-/**
- * The accessible fallback every chart carries: the same numbers as a table,
- * behind a disclosure so it does not compete with the marks.
- */
 export function ChartTable({
   columns,
   rows,
@@ -94,8 +80,6 @@ export function ChartTable({
             </tr>
           </thead>
           <tbody>
-            {/* Keyed by position: a row's first cell is a label, which can
-                repeat or be blank, so it is not a stable identity. */}
             {rows.map((row, rowIndex) => (
               <tr key={rowIndex} className="border-b last:border-0">
                 {row.map((cell, i) => (
@@ -118,7 +102,6 @@ export function ChartTable({
   );
 }
 
-/** Floating tooltip body, positioned by the caller. */
 export function TooltipCard({
   title,
   rows,

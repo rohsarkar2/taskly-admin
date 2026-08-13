@@ -1,10 +1,3 @@
-/**
- * Organization activity log.
- *
- * Actions use a dotted vocabulary (`employee.approved`); `GET
- * /activity-logs/actions` returns the filterable set, so the filter dropdown is
- * populated by the server rather than a hardcoded list.
- */
 
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
@@ -37,7 +30,6 @@ export async function listActivityLogs(
   return unwrapList<ApiActivityLog>(data, "logs");
 }
 
-/** The filterable action vocabulary. */
 export async function listActivityActions(): Promise<
   ApiResponse<ActivityActionsData>
 > {
@@ -47,7 +39,6 @@ export async function listActivityActions(): Promise<
   return unwrapResponse<ActivityActionsData>(data);
 }
 
-/** Compact feed for the dashboard. */
 export async function listRecentActivity(
   params: { limit?: number } = {},
 ): Promise<ListResult<ApiActivityLog>> {

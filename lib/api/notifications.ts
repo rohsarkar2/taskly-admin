@@ -1,11 +1,3 @@
-/**
- * The admin's own notification inbox.
- *
- * The spec defers the payload shape to the employee notification endpoints,
- * which are not documented here — so `ApiNotification` accepts the common
- * aliases (`message`/`body`, `isRead`/`read`, `link`/`url`) and the adapter
- * normalises whichever arrives.
- */
 
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
@@ -68,7 +60,6 @@ export async function deleteNotification(
   return unwrapResponse<EmptyData>(data);
 }
 
-/** Clears every notification already marked read. */
 export async function clearReadNotifications(): Promise<
   ApiResponse<EmptyData>
 > {

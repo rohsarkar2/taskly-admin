@@ -1,10 +1,3 @@
-/**
- * Employee registration approval and management API.
- *
- * One function per endpoint in the Employee API spec. List responses go
- * through `unwrapList` so pagination survives; single-entity responses go
- * through `unwrapResponse`. Both accept the enveloped and flat shapes.
- */
 
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
@@ -25,17 +18,11 @@ import type {
 } from "./types";
 import type { EmployeeStatus, Role } from "@/lib/types";
 
-/* -------------------------------------------------------------------------- */
-/* Reading                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/** Registrations from the mobile app awaiting an approve/reject decision. */
 export async function listPendingEmployees(): Promise<ListResult<ApiEmployee>> {
   const { data } = await axiosPrivate.get(ADMIN_ENDPOINTS.EMPLOYEES_PENDING);
   return unwrapList<ApiEmployee>(data, "employees");
 }
 
-/** Filtering happens server-side; blank values are omitted from the query. */
 export async function listEmployees(
   params: EmployeeListParams = {},
 ): Promise<ListResult<ApiEmployee>> {
@@ -59,7 +46,6 @@ export async function listEmployees(
   return unwrapList<ApiEmployee>(data, "employees");
 }
 
-/** Returns the employee plus a light `summary`; richer numbers come from `getEmployeeStats`. */
 export async function getEmployee(
   id: string,
 ): Promise<ApiResponse<EmployeeDetailData>> {
@@ -74,7 +60,6 @@ export async function getEmployeeStats(
   return unwrapResponse<EmployeeStatsData>(data);
 }
 
-/** Each entry carries `projectRole`, the employee's role within that project. */
 export async function getEmployeeProjects(
   id: string,
 ): Promise<ApiResponse<EmployeeProjectsData>> {
@@ -94,11 +79,6 @@ export async function getEmployeeTasks(
   return unwrapList<unknown>(data, "tasks");
 }
 
-/* -------------------------------------------------------------------------- */
-/* Approval                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/** Assigns the role and flips the employee to Active. */
 export async function approveEmployee(
   id: string,
   payload: ApproveEmployeeRequest,
@@ -110,7 +90,6 @@ export async function approveEmployee(
   return unwrapResponse<EmployeeData>(data);
 }
 
-/** The reason is optional and is shown to the employee. */
 export async function rejectEmployee(
   id: string,
   payload: RejectEmployeeRequest = {},
@@ -122,10 +101,6 @@ export async function rejectEmployee(
   return unwrapResponse<EmployeeData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Management                                                                 */
-/* -------------------------------------------------------------------------- */
-
 export async function changeEmployeeRole(
   id: string,
   role: Role,
@@ -136,7 +111,6 @@ export async function changeEmployeeRole(
   return unwrapResponse<EmployeeData>(data);
 }
 
-/** Only `active` employees can be suspended; their session is revoked at once. */
 export async function suspendEmployee(
   id: string,
   payload: SuspendEmployeeRequest = {},
@@ -148,7 +122,6 @@ export async function suspendEmployee(
   return unwrapResponse<EmployeeData>(data);
 }
 
-/** Reverses a suspension. A `pending` employee must go through approve instead. */
 export async function activateEmployee(
   id: string,
 ): Promise<ApiResponse<EmployeeData>> {
@@ -158,7 +131,6 @@ export async function activateEmployee(
   return unwrapResponse<EmployeeData>(data);
 }
 
-/** Convenience wrapper so callers can express a target status directly. */
 export async function changeEmployeeStatus(
   id: string,
   status: EmployeeStatus,
@@ -169,10 +141,6 @@ export async function changeEmployeeStatus(
     : suspendEmployee(id, reason ? { reason } : {});
 }
 
-/**
- * Soft-deletes the employee. Their tasks stay in the system and become
- * unassigned, so anything in flight should be reassigned first.
- */
 export async function removeEmployee(
   id: string,
 ): Promise<ApiResponse<EmptyData>> {

@@ -33,6 +33,16 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
 import { clearTokens } from "@/lib/redux/slices/authSlice";
@@ -55,12 +65,7 @@ interface NavItem {
   title: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
-  /**
-   * Which live count to show as a badge. Held as a key rather than a number so
-   * this table can stay a module constant while the counts change underneath.
-   */
   badgeKey?: BadgeKey;
-  /** Nested routes that should also light this item up. */
   matchPrefix?: boolean;
 }
 
@@ -69,7 +74,6 @@ interface NavGroup {
   items: NavItem[];
 }
 
-/** Anything larger would widen the collapsed rail. */
 const formatBadge = (count: number) => (count > 99 ? "99+" : String(count));
 
 const navGroups: NavGroup[] = [
@@ -144,13 +148,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const organization = useAppSelector((state) => state.user.organization);
   const badges = useAppSelector((state) => state.badges);
 
-  // Pull the badge counts once per mount. Pages that change a count dispatch
-  // `fetchBadgeCounts()` themselves, so this does not need to poll.
   React.useEffect(() => {
     dispatch(fetchBadgeCounts());
   }, [dispatch]);
 
-  // Fetch user and organization details on mount
   React.useEffect(() => {
     const fetchUserDetails = async () => {
       try {
@@ -171,6 +172,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     }
   }, [dispatch, user, organization]);
 
+  const [signOutOpen, setSignOutOpen] = React.useState(false);
+
   const handleSignOut = async () => {
     try {
       const { message } = await logoutRequest();
@@ -181,7 +184,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       router.push("/sign-in");
     } catch (error) {
       console.error("Logout error:", error);
-      // Still clear tokens and redirect even if logout call fails
       dispatch(clearTokens());
       dispatch(clearUser());
       dispatch(clearBadgeCounts());
@@ -193,156 +195,165 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     item.matchPrefix ? pathname.startsWith(item.url) : pathname === item.url;
 
   return (
-    <Sidebar collapsible="icon" {...props} className="border-r-0">
-      {/*
-        Collapsed, this header has to end up 64px tall so its bottom border
-        lines up with the `h-16` page header next to it. That is 32px of button
-        plus 16px above and below — `py-4` rather than padding only the bottom,
-        which would hit the same height with the logo riding high. The `px`
-        from the base `p-2` is left alone: it is what narrows the 48px rail to
-        the 32px the collapsed button expects.
-      */}
-      <SidebarHeader className="border-b border-gray-200 bg-linear-to-b from-white to-gray-50/50 transition-[padding] duration-200 ease-linear group-data-[collapsible=icon]:py-4">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              asChild
-              className="hover:bg-gray-100 data-[state=open]:bg-gray-100 "
+    <>
+      <Sidebar collapsible="icon" {...props} className="border-r-0">
+        <SidebarHeader className="border-b border-gray-200 bg-linear-to-b from-white to-gray-50/50 transition-[padding] duration-200 ease-linear group-data-[collapsible=icon]:py-4">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="lg"
+                asChild
+                className="hover:bg-gray-100 data-[state=open]:bg-gray-100 "
+              >
+                <Link href="/dashboard">
+                  <div className="flex aspect-square size-9 shrink-0 items-center justify-center transition-[width,height] duration-200 ease-linear group-data-[collapsible=icon]:size-8">
+                    <Image
+                      src="/images/taskly-logo.png"
+                      alt="Taskly"
+                      width={36}
+                      height={36}
+                      className="size-full rounded-xl object-contain"
+                    />
+                  </div>
+                  <div className="grid flex-1 text-left text-sm leading-tight transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:opacity-0">
+                    <span className="truncate font-bold text-gray-900 text-base">
+                      Taskly
+                    </span>
+                    <span className="truncate text-xs text-gray-500 font-medium">
+                      Admin Dashboard
+                    </span>
+                  </div>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+
+        <SidebarContent className="bg-white">
+          {navGroups.map((group, groupIndex) => (
+            <SidebarGroup
+              key={group.label}
+              className={groupIndex > 0 ? "mt-2" : ""}
             >
-              <Link href="/dashboard">
-                {/*
-                  Collapsed, the button is pinned to 32px by the sidebar's own
-                  `group-data-[collapsible=icon]:size-8!`. `shrink-0` is what
-                  keeps the logo centred: without it the flex row still counts
-                  the (clipped) title beside it, and since that sibling is
-                  `flex-1` with a zero basis the logo absorbs the whole
-                  overflow and squashes off to the left.
-                */}
-                <div className="flex aspect-square size-9 shrink-0 items-center justify-center transition-[width,height] duration-200 ease-linear group-data-[collapsible=icon]:size-8">
-                  <Image
-                    src="/images/taskly-icon.png"
-                    alt="Taskly"
-                    width={36}
-                    height={36}
-                    className="size-full rounded-xl object-contain"
-                  />
-                </div>
-                {/*
-                  Fades out instead of `hidden`. `shrink-0` above is what keeps
-                  the logo centred, so this no longer has to leave the flow —
-                  and `display: none` cannot be transitioned, so it popped.
-                */}
-                <div className="grid flex-1 text-left text-sm leading-tight transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:opacity-0">
-                  <span className="truncate font-bold text-gray-900 text-base">
-                    Taskly
-                  </span>
-                  <span className="truncate text-xs text-gray-500 font-medium">
-                    Admin Dashboard
-                  </span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
+              <SidebarGroupLabel className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                {group.label}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => {
+                    const active = isActive(item);
+                    const count =
+                      item.badgeKey && badges.loaded ? badges[item.badgeKey] : 0;
 
-      <SidebarContent className="bg-white">
-        {navGroups.map((group, groupIndex) => (
-          <SidebarGroup
-            key={group.label}
-            className={groupIndex > 0 ? "mt-2" : ""}
-          >
-            <SidebarGroupLabel className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              {group.label}
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => {
-                  const active = isActive(item);
-                  // Hidden until the first fetch settles, so a badge never
-                  // flashes an unfetched zero on the way to its real count.
-                  const count =
-                    item.badgeKey && badges.loaded ? badges[item.badgeKey] : 0;
-
-                  return (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        tooltip={item.title}
-                        className={
-                          active
-                            ? "bg-linear-to-r from-[#2d5a4c]/20 to-[#3a6f5c]/0 data-active:bg-transparent active:bg-transparent text-[#2d5a4c] font-semibold border-l-3 border-[#2d5a4c] hover:bg-transparent hover:from-[#2d5a4c]/30 hover:to-[#3a6f5c]/10"
-                            : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                        }
-                      >
-                        <Link
-                          href={item.url}
-                          className="flex items-center gap-3"
+                    return (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={active}
+                          tooltip={item.title}
+                          className={
+                            active
+                              ? "bg-linear-to-r from-[#2d5a4c]/20 to-[#3a6f5c]/0 data-active:bg-transparent active:bg-transparent text-[#2d5a4c] font-semibold border-l-3 border-[#2d5a4c] hover:bg-transparent hover:from-[#2d5a4c]/30 hover:to-[#3a6f5c]/10"
+                              : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                          }
                         >
-                          <item.icon className={active ? "size-5" : "size-4"} />
-                          <span>{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                      {count > 0 && (
-                        <SidebarMenuBadge className="bg-[#2d5a4c] text-white!  font-semibold min-w-5 h-5 flex items-center justify-center">
-                          {formatBadge(count)}
-                        </SidebarMenuBadge>
-                      )}
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
-      </SidebarContent>
+                          <Link
+                            href={item.url}
+                            className="flex items-center gap-3"
+                          >
+                            <item.icon className={active ? "size-5" : "size-4"} />
+                            <span>{item.title}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
+        </SidebarContent>
 
-      <SidebarFooter className="border-t border-gray-200 bg-linear-to-t from-gray-50/50 to-white">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              asChild
-              tooltip={user?.name || "Admin"}
-              className="hover:bg-gray-100 data-[state=open]:bg-gray-100"
-            >
-              <Link href="/dashboard/settings">
-                {/*
-                  Same shape as the header logo. `size-7` rather than `size-8`
-                  when collapsed so the 2px ring has room inside the 32px
-                  button instead of being clipped away by its overflow.
-                */}
-                <Avatar className="size-9 shrink-0 ring-2 ring-gray-200 transition-[width,height] duration-200 ease-linear group-data-[collapsible=icon]:size-7">
-                  <AvatarFallback className="bg-linear-to-br from-[#2d5a4c] to-[#3a6f5c] text-white font-semibold">
-                    {user ? initialsOf(user.name) : "AD"}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:opacity-0">
-                  <span className="truncate font-semibold text-gray-900">
-                    {user?.name || "Admin"}
-                  </span>
-                  <span className="truncate text-xs text-gray-500">
-                    {user?.email || "admin@taskly.com"}
-                  </span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={handleSignOut}
-              tooltip="Sign Out"
-              className="text-red-600 hover:bg-red-50 hover:text-red-700 font-medium"
-            >
-              <LogOut className="size-4" />
-              <span>Sign Out</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
-      <SidebarRail />
-    </Sidebar>
+        <SidebarFooter className="border-t border-gray-200 bg-linear-to-t from-gray-50/50 to-white">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="lg"
+                asChild
+                tooltip={user?.name || "Admin"}
+                className="hover:bg-gray-100 data-[state=open]:bg-gray-100"
+              >
+                <Link href="/dashboard/settings">
+                  <Avatar className="size-9 shrink-0 ring-2 ring-gray-200 transition-[width,height] duration-200 ease-linear group-data-[collapsible=icon]:size-7">
+                    <AvatarFallback className="bg-linear-to-br from-[#2d5a4c] to-[#3a6f5c] text-white font-semibold">
+                      {user ? initialsOf(user.name) : "AD"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left text-sm leading-tight transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:opacity-0">
+                    <span className="truncate font-semibold text-gray-900">
+                      {user?.name || "Admin"}
+                    </span>
+                    <span className="truncate text-xs text-gray-500">
+                      {user?.email || "admin@taskly.com"}
+                    </span>
+                  </div>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() => setSignOutOpen(true)}
+                tooltip="Sign Out"
+                className="text-red-600 hover:bg-red-50 hover:text-red-700 font-medium"
+              >
+                <LogOut className="size-4" />
+                <span>Sign Out</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+        <SidebarRail />
+      </Sidebar>
+
+      <SignOutDialog
+        open={signOutOpen}
+        onOpenChange={setSignOutOpen}
+        onConfirm={handleSignOut}
+      />
+    </>
+  );
+}
+
+export function SignOutDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Sign out of Taskly Admin?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You will be returned to the sign-in page and will need your
+            credentials to get back in. Any unsaved changes on this page are
+            lost.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-red-600 text-white hover:bg-red-700"
+            onClick={onConfirm}
+          >
+            Sign Out
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

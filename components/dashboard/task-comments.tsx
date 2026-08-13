@@ -26,13 +26,6 @@ import {
 import { formatDateTime, initialsOf } from "@/lib/mock-data";
 import type { MentionUser, TaskComment } from "@/lib/types";
 
-/**
- * The comment thread on a task.
- *
- * Threads are one level deep — a reply cannot itself be replied to — which is
- * enforced by the server and mirrored here by only offering Reply on top-level
- * comments. Admins may delete anyone's comment but may only edit their own.
- */
 export function TaskComments({
   taskId,
   currentUserId,
@@ -40,7 +33,6 @@ export function TaskComments({
 }: {
   taskId: string;
   currentUserId?: string;
-  /** Called after any change the server also records on the task timeline. */
   onChange?: () => void;
 }) {
   const [comments, setComments] = React.useState<TaskComment[]>([]);
@@ -86,7 +78,6 @@ export function TaskComments({
     };
   }, [taskId]);
 
-  /** Appends `@Name ` to whichever composer is open. */
   const insertMention = (user: MentionUser) => {
     const token = `@${user.name} `;
     if (replyTo) {
@@ -165,7 +156,6 @@ export function TaskComments({
       toast.success("Comment updated");
       onChange?.();
     } catch (error) {
-      // Editing is author-only; the server answers 403 for anyone else.
       toast.error(getErrorMessage(error, "Could not update the comment."));
     } finally {
       setBusy(false);
@@ -216,7 +206,6 @@ export function TaskComments({
       </CardHeader>
 
       <CardContent className="space-y-5">
-        {/* Composer */}
         <div className="space-y-2">
           <Textarea
             ref={composerRef}
@@ -254,7 +243,6 @@ export function TaskComments({
           </Button>
         </div>
 
-        {/* Thread */}
         {loading ? (
           <div className="space-y-3">
             <Skeleton className="h-16 w-full" />
@@ -368,7 +356,6 @@ function CommentRow({
   canEdit: boolean;
   onEdit: () => void;
   onDelete: () => void;
-  /** Absent on replies — threads are one level deep. */
   onReply?: () => void;
   isEditing: boolean;
   editDraft: string;
@@ -443,7 +430,6 @@ function CommentRow({
                 Reply
               </Button>
             )}
-            {/* Editing is author-only; deleting is allowed for admins. */}
             {canEdit && (
               <Button size="xs" variant="ghost" onClick={onEdit}>
                 Edit

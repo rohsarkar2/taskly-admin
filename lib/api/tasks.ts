@@ -1,10 +1,3 @@
-/**
- * Task management and the approval centre.
- *
- * One function per endpoint in the Task API spec. Lists go through
- * `unwrapList` so pagination survives; single-entity responses through
- * `unwrapResponse`.
- */
 
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
@@ -24,11 +17,6 @@ import type {
   UpdateTaskRequest,
 } from "./types";
 
-/* -------------------------------------------------------------------------- */
-/* Reading                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/** Organization-wide search. `status` and `priority` accept comma-separated lists. */
 export async function listTasks(
   params: TaskListParams = {},
 ): Promise<ListResult<ApiTask>> {
@@ -59,13 +47,11 @@ export async function listTasks(
   return unwrapList<ApiTask>(data, "tasks");
 }
 
-/** Includes the full timeline and populated approvers. */
 export async function getTask(id: string): Promise<ApiResponse<TaskData>> {
   const { data } = await axiosPrivate.get(ADMIN_ENDPOINTS.TASK(id));
   return unwrapResponse<TaskData>(data);
 }
 
-/** Newest first. */
 export async function getTaskTimeline(
   id: string,
 ): Promise<ApiResponse<TaskTimelineData>> {
@@ -73,14 +59,6 @@ export async function getTaskTimeline(
   return unwrapResponse<TaskTimelineData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Writing                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Only `title` and `projectId` are required — approval and default priority
- * are inherited from the project's effective workflow.
- */
 export async function createTask(
   payload: CreateTaskRequest,
 ): Promise<ApiResponse<TaskData>> {
@@ -88,7 +66,6 @@ export async function createTask(
   return unwrapResponse<TaskData>(data);
 }
 
-/** Partial update. An admin may set `status` directly, bypassing approval. */
 export async function updateTask(
   id: string,
   payload: UpdateTaskRequest,
@@ -114,7 +91,6 @@ export async function updateTaskPriority(
   return unwrapResponse<TaskData>(data);
 }
 
-/** Notifies the assignee. Pass `null` to clear the date. */
 export async function updateTaskDueDate(
   id: string,
   dueDate: string | null,
@@ -125,10 +101,6 @@ export async function updateTaskDueDate(
   return unwrapResponse<TaskData>(data);
 }
 
-/**
- * Resets the assignment acceptance and notifies the new assignee. Pass `null`
- * to unassign. The assignee must be an active member of the task's project.
- */
 export async function reassignTask(
   id: string,
   assignee: string | null,
@@ -139,17 +111,11 @@ export async function reassignTask(
   return unwrapResponse<TaskData>(data);
 }
 
-/** Soft delete — hidden from queries, but the history is preserved. */
 export async function deleteTask(id: string): Promise<ApiResponse<EmptyData>> {
   const { data } = await axiosPrivate.delete(ADMIN_ENDPOINTS.TASK(id));
   return unwrapResponse<EmptyData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Approval centre                                                            */
-/* -------------------------------------------------------------------------- */
-
-/** Tasks awaiting a decision, oldest submission first. */
 export async function listPendingApprovals(
   params: { projectId?: string; page?: number; limit?: number } = {},
 ): Promise<ListResult<ApiTask>> {
@@ -166,7 +132,6 @@ export async function listPendingApprovals(
   return unwrapList<ApiTask>(data, "tasks");
 }
 
-/** Completes the task, stamps `completedAt` and notifies the assignee. */
 export async function approveTask(
   id: string,
   payload: TaskDecisionRequest = {},
@@ -178,7 +143,6 @@ export async function approveTask(
   return unwrapResponse<TaskData>(data);
 }
 
-/** `comments` is required by the server. */
 export async function rejectTask(
   id: string,
   payload: TaskDecisionRequest,
@@ -190,7 +154,6 @@ export async function rejectTask(
   return unwrapResponse<TaskData>(data);
 }
 
-/** Sends the task back for rework so it can be resubmitted. `comments` required. */
 export async function returnTask(
   id: string,
   payload: TaskDecisionRequest,
@@ -202,10 +165,6 @@ export async function returnTask(
   return unwrapResponse<TaskData>(data);
 }
 
-/**
- * Recomputes the approver list from the project's current workflow — useful
- * after changing a project's managers or team leads.
- */
 export async function reassignTaskApprovers(
   id: string,
 ): Promise<ApiResponse<TaskApproversData>> {

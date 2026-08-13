@@ -1,9 +1,3 @@
-/**
- * Every admin API path in one place.
- *
- * `app/axios/Axios.ts` reads `REFRESH_TOKEN` from here too, so the interceptor
- * and the API layer can never drift apart.
- */
 export const ADMIN_ENDPOINTS = {
   REGISTER: "/admin/auth/register",
   LOGIN: "/admin/auth/login",
@@ -13,8 +7,6 @@ export const ADMIN_ENDPOINTS = {
   ORGANIZATION: "/admin/organization",
   CHANGE_PASSWORD: "/admin/auth/change-password",
 
-  // Password reset runs in three steps:
-  // forgot-password → verify-reset-otp → reset-password.
   FORGOT_PASSWORD: "/admin/auth/forgot-password",
   VERIFY_RESET_OTP: "/admin/auth/verify-reset-otp",
   RESET_PASSWORD: "/admin/auth/reset-password",

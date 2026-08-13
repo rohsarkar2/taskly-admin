@@ -18,10 +18,6 @@ import type {
   TaskStatus,
 } from "@/lib/types";
 
-/* -------------------------------------------------------------------------- */
-/* Page chrome                                                                */
-/* -------------------------------------------------------------------------- */
-
 export function PageHeader({
   title,
   description,
@@ -75,11 +71,6 @@ export function SectionTitle({
   );
 }
 
-/**
- * Shown when an endpoint could not be reached and the page fell back to the
- * seeded fixtures. Labelling it is the point — unlabelled sample data reads as
- * real data.
- */
 export function SampleDataNotice({
   message = "Could not reach the API — showing sample data.",
   onRetry,
@@ -123,10 +114,6 @@ export function EmptyState({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Stat tiles — a headline number is a tile, never a one-bar chart            */
-/* -------------------------------------------------------------------------- */
-
 export function StatTile({
   label,
   value,
@@ -139,7 +126,6 @@ export function StatTile({
   value: string | number;
   hint?: string;
   icon?: React.ComponentType<{ className?: string }>;
-  /** Small colour cue on the icon only; the number itself stays in text ink. */
   accent?: string;
   href?: string;
 }) {
@@ -190,14 +176,6 @@ export function StatGrid({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Badges                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Status colours are reserved and always ship with their label — a dot plus
- * text, never a colour on its own.
- */
 function Dot({ color }: { color: string }) {
   return (
     <span
@@ -294,16 +272,6 @@ export function RoleBadge({ role }: { role: Role }) {
   return <Badge variant="secondary">{role}</Badge>;
 }
 
-/* -------------------------------------------------------------------------- */
-/* People                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Renders a person as avatar + name + subtitle.
- *
- * Takes either a full `employee` (API-backed pages) or an `employeeId` to look
- * up in the fixtures (pages still running on static data).
- */
 export function PersonCell({
   employee: provided,
   employeeId,
@@ -391,10 +359,6 @@ export function AvatarStack({
     </span>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Misc                                                                       */
-/* -------------------------------------------------------------------------- */
 
 export function ProgressCell({ value }: { value: number }) {
   return (

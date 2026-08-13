@@ -12,14 +12,6 @@ const VB_W = 720;
 const VB_H = 260;
 const PAD = { top: 16, right: 20, bottom: 30, left: 44 };
 
-/**
- * Multi-series line chart for trend-over-time, with the crosshair + tooltip
- * hover layer every interactive chart ships by default.
- *
- * Strokes use `non-scaling-stroke` so the 2px mark weight holds at any
- * container width, and the last point of each series is direct-labelled so
- * identity never depends on the legend swatch alone.
- */
 export function LineChart({
   categories,
   series,
@@ -42,7 +34,6 @@ export function LineChart({
   }));
 
   const rawMax = Math.max(...series.flatMap((s) => s.values), 1);
-  // Round the axis up to a clean step so ticks are readable numbers.
   const step = Math.max(1, Math.ceil(rawMax / 4 / 5) * 5);
   const max = step * 4;
 
@@ -56,13 +47,6 @@ export function LineChart({
 
   const ticks = [0, 1, 2, 3, 4].map((t) => t * step);
 
-  /**
-   * Draw roughly eight tick labels however many points there are.
-   *
-   * Thinning happens here rather than at the call site: blanking the incoming
-   * categories would also blank the tooltip and the table view, and would give
-   * several entries the same empty key.
-   */
   const labelEvery = Math.max(1, Math.ceil(categories.length / 8));
 
   const handleMove = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -90,7 +74,6 @@ export function LineChart({
           onPointerMove={handleMove}
           onPointerLeave={() => setHover(null)}
         >
-          {/* Gridlines — recessive hairlines, no vertical grid */}
           {ticks.map((t) => (
             <g key={t}>
               <line
@@ -115,7 +98,6 @@ export function LineChart({
             </g>
           ))}
 
-          {/* Category labels — thinned so they never overlap */}
           {categories.map((c, i) =>
             i % labelEvery === 0 || i === categories.length - 1 ? (
               <text
@@ -131,7 +113,6 @@ export function LineChart({
             ) : null,
           )}
 
-          {/* Crosshair */}
           {hover !== null && (
             <line
               x1={x(hover)}
@@ -145,7 +126,6 @@ export function LineChart({
             />
           )}
 
-          {/* Series */}
           {series.map((s, si) => {
             const color = legend[si].color;
             const path = s.values
@@ -164,7 +144,6 @@ export function LineChart({
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
                 />
-                {/* 2px surface ring keeps overlapping markers separable */}
                 {hover !== null && (
                   <circle
                     cx={x(hover)}
@@ -176,7 +155,6 @@ export function LineChart({
                     vectorEffect="non-scaling-stroke"
                   />
                 )}
-                {/* Direct label on the final point */}
                 <text
                   x={x(lastIdx) + 6}
                   y={y(s.values[lastIdx]) - 6}
@@ -192,7 +170,6 @@ export function LineChart({
             );
           })}
 
-          {/* Baseline */}
           <line
             x1={PAD.left}
             x2={VB_W - PAD.right}

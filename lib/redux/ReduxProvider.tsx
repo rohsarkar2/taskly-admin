@@ -7,7 +7,6 @@ import { restoreTokens } from "./slices/authSlice";
 
 export function ReduxProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    // Restore tokens from sessionStorage on app load
     store.dispatch(restoreTokens());
   }, []);
 
