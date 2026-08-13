@@ -1,12 +1,3 @@
-/**
- * Static fixtures for every screen except sign-in / sign-up, which already talk
- * to the real backend.
- *
- * Everything is a plain module constant with fixed ISO dates so server and
- * client renders agree (no `Date.now()` anywhere in the data). `REFERENCE_TODAY`
- * stands in for "now" in every derived metric; when these fixtures are replaced
- * by API responses, swap it for the real current date.
- */
 
 import type {
   ActivityLog,
@@ -24,10 +15,6 @@ import type {
 } from "./types";
 
 export const REFERENCE_TODAY = "2026-08-07";
-
-/* -------------------------------------------------------------------------- */
-/* Organization                                                               */
-/* -------------------------------------------------------------------------- */
 
 export const organizationSettings: OrganizationSettings = {
   name: "ABC Technologies",
@@ -52,10 +39,6 @@ export const organizationSettings: OrganizationSettings = {
     sessionTimeoutMinutes: 60,
   },
 };
-
-/* -------------------------------------------------------------------------- */
-/* Employees                                                                  */
-/* -------------------------------------------------------------------------- */
 
 export const employees: Employee[] = [
   {
@@ -262,10 +245,6 @@ export const employees: Employee[] = [
   },
 ];
 
-/* -------------------------------------------------------------------------- */
-/* Projects                                                                   */
-/* -------------------------------------------------------------------------- */
-
 export const projects: Project[] = [
   {
     id: "p-1",
@@ -419,11 +398,6 @@ export const projects: Project[] = [
   },
 ];
 
-/* -------------------------------------------------------------------------- */
-/* Tasks                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/** Compact tuple form keeps ~40 fixtures readable: */
 type TaskSeed = [
   id: string,
   title: string,
@@ -439,7 +413,6 @@ type TaskSeed = [
 ];
 
 const taskSeeds: TaskSeed[] = [
-  // Mobile App
   ["t-1001", "Organization ID validation on registration screen", "p-1", "e-2", "e-3", "e-2", "Completed", "High", "2026-06-08", "2026-06-18", "2026-06-16"],
   ["t-1002", "Offline task queue with background sync", "p-1", "e-3", "e-3", "e-2", "In Progress", "High", "2026-07-14", "2026-08-14", null],
   ["t-1003", "Push notification for approval decisions", "p-1", "e-2", "e-7", "e-2", "Pending Approval", "Medium", "2026-07-28", "2026-08-12", null],
@@ -451,7 +424,6 @@ const taskSeeds: TaskSeed[] = [
   ["t-1009", "Token refresh loop on expired sessions", "p-1", "e-2", "e-3", "e-1", "Pending Approval", "High", "2026-08-02", "2026-08-18", null],
   ["t-1010", "Accessibility audit for task creation flow", "p-1", "e-7", "e-7", "e-2", "To Do", "Medium", "2026-08-05", "2026-08-29", null],
 
-  // Website Revamp
   ["t-2001", "Design tokens for the new marketing palette", "p-2", "e-11", "e-8", "e-2", "Completed", "High", "2026-05-04", "2026-05-20", "2026-05-18"],
   ["t-2002", "Rebuild pricing page with CMS blocks", "p-2", "e-2", "e-5", "e-2", "Completed", "High", "2026-06-01", "2026-06-19", "2026-06-17"],
   ["t-2003", "Lighthouse budget under 2s LCP on 4G", "p-2", "e-11", "e-5", "e-11", "In Progress", "Urgent", "2026-07-20", "2026-08-11", null],
@@ -464,7 +436,6 @@ const taskSeeds: TaskSeed[] = [
   ["t-2010", "Rejected: replace hero video with autoplay reel", "p-2", "e-8", "e-8", "e-11", "Rejected", "Low", "2026-07-11", "2026-07-31", null],
   ["t-2011", "SEO metadata for all top-level routes", "p-2", "e-11", "e-5", "e-11", "In Progress", "Medium", "2026-07-27", "2026-08-06", null],
 
-  // Backend API
   ["t-3001", "Admin registration returns the organization ID", "p-3", "e-4", "e-5", "e-4", "Completed", "Urgent", "2026-05-11", "2026-05-25", "2026-05-22"],
   ["t-3002", "Employee approval endpoint with role assignment", "p-3", "e-1", "e-4", "e-1", "Completed", "Urgent", "2026-06-02", "2026-06-20", "2026-06-18"],
   ["t-3003", "Refresh token rotation and revoke list", "p-3", "e-4", "e-9", "e-4", "In Progress", "High", "2026-07-15", "2026-08-13", null],
@@ -477,12 +448,10 @@ const taskSeeds: TaskSeed[] = [
   ["t-3010", "Notification fan-out worker", "p-3", "e-4", "e-10", "e-1", "In Progress", "Medium", "2026-07-25", "2026-08-04", null],
   ["t-3011", "Soft delete and restore for employees", "p-3", "e-1", "e-5", "e-4", "To Do", "Low", "2026-08-06", "2026-09-08", null],
 
-  // HR Portal
   ["t-4001", "Leave balance calculation rules", "p-4", "e-11", "e-4", "e-6", "To Do", "Low", "2026-06-16", "2026-08-20", null],
   ["t-4002", "Onboarding checklist template builder", "p-4", "e-6", "e-11", "e-6", "In Progress", "Low", "2026-06-29", "2026-08-30", null],
   ["t-4003", "Payroll export format review with finance", "p-4", "e-6", "e-6", "e-6", "Blocked", "Medium", "2026-07-01", "2026-07-30", null],
 
-  // Data Migration (delivered)
   ["t-5001", "Map legacy task statuses to the new enum", "p-5", "e-4", "e-10", "e-4", "Completed", "High", "2026-04-13", "2026-04-30", "2026-04-28"],
   ["t-5002", "Dry-run migration against a staging snapshot", "p-5", "e-10", "e-10", "e-4", "Completed", "High", "2026-05-04", "2026-05-22", "2026-05-20"],
   ["t-5003", "Cutover runbook and rollback plan", "p-5", "e-4", "e-4", "e-4", "Completed", "Urgent", "2026-05-25", "2026-06-12", "2026-06-11"],
@@ -614,10 +583,6 @@ export const tasks: Task[] = taskSeeds.map((seed) => {
     timeline: buildTimeline(seed),
   };
 });
-
-/* -------------------------------------------------------------------------- */
-/* Notifications & activity                                                   */
-/* -------------------------------------------------------------------------- */
 
 export const notifications: AppNotification[] = [
   {
@@ -763,7 +728,6 @@ export const activityLogs: ActivityLog[] = [
   },
 ];
 
-/** Monthly created-vs-completed volume for the trend chart. */
 export const monthlyTaskVolume = [
   { month: "Feb", created: 14, completed: 9 },
   { month: "Mar", created: 22, completed: 17 },
@@ -774,16 +738,6 @@ export const monthlyTaskVolume = [
   { month: "Aug", created: 18, completed: 7 },
 ];
 
-/* -------------------------------------------------------------------------- */
-/* Date helpers                                                               */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Parses a date.
- *
- * A bare `yyyy-mm-dd` is read as UTC so day arithmetic never shifts by
- * timezone; a full ISO timestamp is passed through untouched.
- */
 export function parseDate(iso: string): Date {
   return new Date(iso.includes("T") ? iso : `${iso}T00:00:00Z`);
 }
@@ -799,16 +753,9 @@ export function daysBetween(fromIso: string, toIso: string): number {
   return Math.round(ms / 86_400_000);
 }
 
-/**
- * `12 Jun 2026` — stable across locales, so no hydration drift.
- *
- * Accepts null so callers can pass optional dates (an unset task due date, for
- * instance) without guarding at every site.
- */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = parseDate(iso);
-  // An unparseable value would otherwise render as "NaN undefined NaN".
   if (Number.isNaN(d.getTime())) return "—";
   const months = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -822,15 +769,6 @@ const MONTH_NAMES = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/**
- * `7 Aug 2026, 11:57 pm` — date plus 12-hour time, in the reader's own
- * timezone.
- *
- * Local time is safe here because everything that calls this renders inside
- * the dashboard, which `AuthGuard` withholds until the session is restored in
- * an effect — so it is never part of the server-rendered HTML and cannot cause
- * a hydration mismatch. Values with no time component fall back to the date.
- */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   if (!iso.includes("T")) return formatDate(iso);
@@ -839,7 +777,6 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return "—";
 
   const hours = d.getHours();
-  // Midnight and noon are 12, not 0 — `% 12` alone would print "0:27 am".
   const hour12 = hours % 12 || 12;
   const meridiem = hours < 12 ? "am" : "pm";
   const minutes = String(d.getMinutes()).padStart(2, "0");
@@ -847,7 +784,6 @@ export function formatDateTime(iso: string | null | undefined): string {
   return `${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}, ${hour12}:${minutes} ${meridiem}`;
 }
 
-/** `9 Jul` — compact axis label for a daily series. */
 export function formatShortDate(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = parseDate(iso);
@@ -855,7 +791,6 @@ export function formatShortDate(iso: string | null | undefined): string {
   return `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]}`;
 }
 
-/** `3 days ago` / `in 5 days`, measured against `REFERENCE_TODAY`. */
 export function relativeToToday(iso: string): string {
   const diff = daysBetween(REFERENCE_TODAY, iso);
   if (diff === 0) return "today";
@@ -863,10 +798,6 @@ export function relativeToToday(iso: string): string {
   if (diff === -1) return "yesterday";
   return diff > 0 ? `in ${diff} days` : `${Math.abs(diff)} days ago`;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Lookups                                                                    */
-/* -------------------------------------------------------------------------- */
 
 export function employeeById(id: string): Employee | undefined {
   return employees.find((e) => e.id === id);
@@ -897,11 +828,6 @@ export function initialsOf(name: string): string {
     .slice(0, 2);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Derived metrics                                                            */
-/* -------------------------------------------------------------------------- */
-
-/** A task is overdue when it is past due and not yet in a terminal state. */
 export function isOverdue(task: Task): boolean {
   if (!task.dueDate) return false;
   if (task.status === "Completed" || task.status === "Rejected") return false;
@@ -997,7 +923,6 @@ export function projectPerformance(): ProjectPerformance[] {
   });
 }
 
-/** Completion rate and workload aggregated by role, for the team comparison. */
 export function teamPerformance() {
   const productivity = employeeProductivity();
   const roles: Role[] = ["Manager", "Team Lead", "Team Member"];

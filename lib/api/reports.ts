@@ -1,9 +1,3 @@
-/**
- * Report generation.
- *
- * `format=json` returns rows for the on-screen preview; the other formats
- * return a binary file, so those go through a separate blob download path.
- */
 
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
@@ -16,7 +10,6 @@ import type {
   ReportType,
 } from "./types";
 
-/** Describes the report types, their columns and which filters each accepts. */
 export async function getReportCatalog(): Promise<
   ApiResponse<ReportCatalogData>
 > {
@@ -35,7 +28,6 @@ function cleanFilters(filters: ReportFilters): ReportFilters {
   );
 }
 
-/** Rows for the preview table. Capped at 5000 — check `truncated`. */
 export async function getReport(
   type: ReportType,
   filters: ReportFilters = {},
@@ -52,13 +44,6 @@ const EXTENSIONS: Record<Exclude<ReportFormat, "json">, string> = {
   pdf: "pdf",
 };
 
-/**
- * Downloads a report as a file.
- *
- * These formats come back as a binary body rather than the usual envelope, so
- * the response is requested as a blob and saved via an object URL. The server's
- * `Content-Disposition` filename is used when present.
- */
 export async function downloadReport(
   type: ReportType,
   format: Exclude<ReportFormat, "json">,
@@ -86,7 +71,6 @@ export async function downloadReport(
     link.click();
     link.remove();
   } finally {
-    // Revoking immediately can cancel the download in some browsers.
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 

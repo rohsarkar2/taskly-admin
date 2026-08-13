@@ -1,13 +1,3 @@
-/**
- * Project management API.
- *
- * One function per endpoint in the Project API spec. The list goes through
- * `unwrapList` so pagination survives; everything else through
- * `unwrapResponse`.
- *
- * Note these routes live at `/projects`, not under `/admin` like the employee
- * and organization endpoints.
- */
 
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
@@ -32,10 +22,6 @@ import type {
   UpdateProjectRequest,
 } from "./types";
 
-/* -------------------------------------------------------------------------- */
-/* Reading                                                                    */
-/* -------------------------------------------------------------------------- */
-
 export async function listProjects(
   params: ProjectListParams = {},
 ): Promise<ListResult<ApiProject>> {
@@ -59,7 +45,6 @@ export async function listProjects(
   return unwrapList<ApiProject>(data, "projects");
 }
 
-/** Returns the project plus a `taskStats` sibling. */
 export async function getProject(
   id: string,
 ): Promise<ApiResponse<ProjectDetailData>> {
@@ -67,14 +52,6 @@ export async function getProject(
   return unwrapResponse<ProjectDetailData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Writing                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Only `name` is required. `managers` and `teamLeads` are merged into
- * `members` server-side, and every listed employee must be active.
- */
 export async function createProject(
   payload: CreateProjectRequest,
 ): Promise<ApiResponse<ProjectData>> {
@@ -82,7 +59,6 @@ export async function createProject(
   return unwrapResponse<ProjectData>(data);
 }
 
-/** Partial update. Setting `status: "completed"` notifies every member. */
 export async function updateProject(
   id: string,
   payload: UpdateProjectRequest,
@@ -107,12 +83,6 @@ export async function unarchiveProject(
   return unwrapResponse<ProjectData>(data);
 }
 
-/**
- * Hard-deletes the project.
- *
- * Refuses with `409` while tasks remain; pass `force` to soft-delete those too.
- * The response reports how many tasks went with it.
- */
 export async function deleteProject(
   id: string,
   options: { force?: boolean } = {},
@@ -123,11 +93,6 @@ export async function deleteProject(
   return unwrapResponse<ProjectDeleteData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Members                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/** Membership is the mobile app's access control for a project. */
 export async function addProjectMembers(
   projectId: string,
   payload: ProjectMemberIdsRequest,
@@ -139,10 +104,6 @@ export async function addProjectMembers(
   return unwrapResponse<ProjectMembersData>(data);
 }
 
-/**
- * Removing a member also strips them from managers, team leads and approvers,
- * and unassigns their open tasks on this project.
- */
 export async function removeProjectMembers(
   projectId: string,
   payload: ProjectMemberIdsRequest,
@@ -154,7 +115,6 @@ export async function removeProjectMembers(
   return unwrapResponse<ProjectMembersData>(data);
 }
 
-/** Replaces the manager list, or appends with `mode: "add"`. */
 export async function assignProjectManagers(
   projectId: string,
   payload: ProjectAssignRequest,
@@ -177,14 +137,6 @@ export async function assignProjectTeamLeads(
   return unwrapResponse<ProjectAssignData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Workflow                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Partial update. A field set to `null` reverts to the organization default,
- * and an explicit `approvers` list beats `approverRole`.
- */
 export async function updateProjectWorkflow(
   projectId: string,
   payload: ApiProjectWorkflow,
@@ -196,11 +148,6 @@ export async function updateProjectWorkflow(
   return unwrapResponse<ProjectWorkflowData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Documents                                                                  */
-/* -------------------------------------------------------------------------- */
-
-/** Multipart upload, field `files`, up to ten per request. */
 export async function uploadProjectDocuments(
   projectId: string,
   files: File[],

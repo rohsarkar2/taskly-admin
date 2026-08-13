@@ -18,10 +18,6 @@ import type {
   TaskStatus,
 } from "@/lib/types";
 
-/* -------------------------------------------------------------------------- */
-/* Page chrome                                                                */
-/* -------------------------------------------------------------------------- */
-
 export function PageHeader({
   title,
   description,
@@ -75,11 +71,6 @@ export function SectionTitle({
   );
 }
 
-/**
- * Shown when an endpoint could not be reached and the page fell back to the
- * seeded fixtures. Labelling it is the point — unlabelled sample data reads as
- * real data.
- */
 export function SampleDataNotice({
   message = "Could not reach the API — showing sample data.",
   onRetry,
@@ -123,10 +114,6 @@ export function EmptyState({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Stat tiles — a headline number is a tile, never a one-bar chart            */
-/* -------------------------------------------------------------------------- */
-
 export function StatTile({
   label,
   value,
@@ -134,49 +121,74 @@ export function StatTile({
   icon: Icon,
   accent,
   href,
+  progress,
 }: {
   label: string;
   value: string | number;
   hint?: string;
   icon?: React.ComponentType<{ className?: string }>;
-  /** Small colour cue on the icon only; the number itself stays in text ink. */
   accent?: string;
   href?: string;
+  /** Optional share-of-total meter, e.g. active out of all employees. */
+  progress?: { value: number; max: number; caption: string };
 }) {
+  const color = accent ?? "var(--viz-1)";
+  // Proportional figures: tabular-nums makes a standalone number look loose.
+  const shown = typeof value === "number" ? value.toLocaleString() : value;
+
   const body = (
     <Card
-      className={cn(href && "transition-colors hover:border-foreground/20")}
+      className={cn(
+        "h-full gap-0",
+        href && "transition-colors hover:border-foreground/20",
+      )}
     >
-      <CardContent className="flex items-start justify-between gap-3 pt-1 pb-3">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-muted-foreground">
-            {label}
-          </p>
-          <p className="mt-1 text-2xl font-bold">{value}</p>
-          {hint && (
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {hint}
+      <CardContent className="pt-1 pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-muted-foreground">
+              {label}
             </p>
+            <p className="mt-1 text-2xl font-bold">{shown}</p>
+            {hint && (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {hint}
+              </p>
+            )}
+          </div>
+          {Icon && (
+            <span
+              aria-hidden
+              className="grid size-8 shrink-0 place-items-center rounded-lg"
+              style={{
+                background: `color-mix(in oklch, ${color} 12%, transparent)`,
+                color,
+              }}
+            >
+              <Icon className="size-4" />
+            </span>
           )}
         </div>
-        {Icon && (
-          <span
-            aria-hidden
-            className="grid size-8 shrink-0 place-items-center rounded-lg"
-            style={{
-              background: `color-mix(in oklch, ${accent ?? "var(--viz-1)"} 12%, transparent)`,
-              color: accent ?? "var(--viz-1)",
-            }}
-          >
-            <Icon className="size-4" />
-          </span>
+
+        {progress && progress.max > 0 && (
+          <div className="mt-3">
+            <Meter
+              value={progress.value}
+              max={progress.max}
+              color={color}
+              size="sm"
+            />
+            <p className="mt-1.5 text-[0.7rem] text-muted-foreground">
+              {progress.caption}
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>
   );
 
   return href ? (
-    <Link href={href} className="block">
+    <Link href={href} className="block h-full">
       {body}
     </Link>
   ) : (
@@ -190,14 +202,6 @@ export function StatGrid({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Badges                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Status colours are reserved and always ship with their label — a dot plus
- * text, never a colour on its own.
- */
 function Dot({ color }: { color: string }) {
   return (
     <span
@@ -208,7 +212,7 @@ function Dot({ color }: { color: string }) {
   );
 }
 
-const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
+export const TASK_STATUS_COLOR: Record<TaskStatus, string> = {
   "To Do": "var(--viz-axis)",
   "In Progress": "var(--viz-1)",
   "Pending Approval": "var(--viz-warning)",
@@ -274,7 +278,7 @@ export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   );
 }
 
-const PRIORITY_COLOR: Record<Priority, string> = {
+export const PRIORITY_COLOR: Record<Priority, string> = {
   Low: "var(--viz-axis)",
   Medium: "var(--viz-1)",
   High: "var(--viz-warning)",
@@ -294,16 +298,6 @@ export function RoleBadge({ role }: { role: Role }) {
   return <Badge variant="secondary">{role}</Badge>;
 }
 
-/* -------------------------------------------------------------------------- */
-/* People                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Renders a person as avatar + name + subtitle.
- *
- * Takes either a full `employee` (API-backed pages) or an `employeeId` to look
- * up in the fixtures (pages still running on static data).
- */
 export function PersonCell({
   employee: provided,
   employeeId,
@@ -391,10 +385,6 @@ export function AvatarStack({
     </span>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Misc                                                                       */
-/* -------------------------------------------------------------------------- */
 
 export function ProgressCell({ value }: { value: number }) {
   return (

@@ -128,7 +128,6 @@ export function NewPasswordForm({
   );
 }
 
-/** Counts down to `expiresAt`, rendering `mm:ss`, then reports expiry. */
 export function ExpiryCountdown({
   expiresAt,
   onExpired,
@@ -138,8 +137,6 @@ export function ExpiryCountdown({
   onExpired?: () => void;
   label: string;
 }) {
-  // Starts null so the server render and first client render agree; the real
-  // value lands after mount.
   const [remaining, setRemaining] = React.useState<number | null>(null);
 
   React.useEffect(() => {

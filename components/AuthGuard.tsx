@@ -6,14 +6,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAppSelector } from "@/lib/redux/hooks";
 import { rememberRedirect } from "@/lib/auth-redirect";
 
-/**
- * Gates the dashboard on a restored session.
- *
- * The important part is waiting for `isRestored`. React runs effects
- * child-first, so this component's effect fires *before* the provider restores
- * the session from `sessionStorage` — redirecting on `!isAuthenticated` alone
- * bounced signed-in admins off any deep link on reload.
- */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -23,13 +15,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isRestored || isAuthenticated) return;
 
-    // Genuinely signed out — keep the destination so signing in returns here.
     rememberRedirect(pathname);
     router.replace("/sign-in");
   }, [isRestored, isAuthenticated, pathname, router]);
 
-  // Rendered on the server too, so the first client paint matches and there is
-  // no hydration mismatch.
   if (!isRestored) return <DashboardLoading />;
 
   if (!isAuthenticated) return null;

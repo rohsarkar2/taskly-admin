@@ -9,13 +9,6 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
-  /**
-   * Whether the session has been read back from browser storage yet.
-   *
-   * Without this, `isAuthenticated: false` is ambiguous — it means both "signed
-   * out" and "not checked yet" — and guards bounce signed-in users off deep
-   * links on reload, before the restore effect has run.
-   */
   isRestored: boolean;
 }
 
@@ -35,11 +28,6 @@ const authSlice = createSlice({
       action: PayloadAction<{
         accessToken: string;
         refreshToken: string;
-        /**
-         * Omit to keep the current choice. Callers that are not the sign-in
-         * form — the refresh interceptor — must omit it, or a token refresh
-         * would quietly downgrade a remembered session to a tab-scoped one.
-         */
         remember?: boolean;
       }>,
     ) => {
@@ -60,7 +48,6 @@ const authSlice = createSlice({
       clearStoredTokens();
     },
     restoreTokens: (state) => {
-      // Restore from browser storage on app load
       const stored = readTokens();
 
       if (stored) {
@@ -69,7 +56,6 @@ const authSlice = createSlice({
         state.isAuthenticated = true;
       }
 
-      // Set even when nothing was stored: the check itself is what finished.
       state.isRestored = true;
     },
   },

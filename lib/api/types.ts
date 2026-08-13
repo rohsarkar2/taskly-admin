@@ -1,38 +1,13 @@
-/**
- * Wire types for the admin authentication API.
- *
- * Types only — no runtime imports. The Redux slices import from here, and so
- * does `lib/api/auth.ts`, which would otherwise create a cycle through the
- * axios instances (auth → Axios → store → slices).
- */
 
-/* -------------------------------------------------------------------------- */
-/* Envelope                                                                   */
-/* -------------------------------------------------------------------------- */
 
-/**
- * Every admin endpoint wraps its payload:
- *
- * ```json
- * { "success": true, "message": "Admin logged in successfully", "data": { … } }
- * ```
- *
- * `message` is shown verbatim in the success toast; `data` carries the payload.
- */
 export interface ApiResponse<T> {
   success: boolean;
   message: string;
   data: T;
 }
 
-/** Endpoints that only report an outcome still send an (often empty) `data`. */
 export type EmptyData = Record<string, never> | null;
 
-/* -------------------------------------------------------------------------- */
-/* Entities                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/** The signed-in admin. `organizationId` is the id string, not the populated doc. */
 export interface AdminUser {
   id: string;
   name: string;
@@ -62,7 +37,6 @@ export interface Organization {
   contactPhone?: string | null;
   logo?: string | null;
   logoUrl?: string | null;
-  /** IANA identifier, e.g. `Asia/Kolkata`. */
   timezone?: string | null;
   workingDays?: string[];
   workingHours?: {
@@ -73,7 +47,6 @@ export interface Organization {
   isActive?: boolean;
 }
 
-/** `GET /admin/organization/settings` — organization-wide defaults. */
 export interface OrganizationSettingsPayload {
   settings: {
     workflow: {
@@ -114,27 +87,15 @@ export interface OrganizationSettingsPayload {
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Employees                                                                  */
-/* -------------------------------------------------------------------------- */
-
-/**
- * An employee as the API sends it. Narrower than the app's `Employee` type —
- * `lib/api/adapters.ts` fills in the presentation-only fields.
- */
 export interface ApiEmployee {
   id: string;
   name: string;
   email: string;
-  /** snake_case enum, e.g. `team_lead`. */
   role: string;
-  /** lowercase enum, e.g. `active`. */
   status: string;
   userType?: string;
-  /** The spec's names. */
   registeredAt?: string;
   joinedAt?: string | null;
-  /** What the server actually sends (ISO timestamps). */
   createdAt?: string;
   approvedAt?: string | null;
   lastLoginAt?: string | null;
@@ -150,7 +111,6 @@ export interface ApiEmployee {
   projectIds?: string[];
 }
 
-/** The app-side roll-up the profile renders. */
 export interface EmployeeStats {
   assigned: number;
   completed: number;
@@ -160,13 +120,11 @@ export interface EmployeeStats {
   avgCompletionDays?: number;
 }
 
-/** `GET /employees/:id/stats` — the server's own shape. */
 export interface ApiEmployeeStats {
   totalTasks?: number;
   tasksByStatus?: Record<string, number>;
   completedTasks?: number;
   overdueTasks?: number;
-  /** Already a percentage, e.g. `75.0`. */
   completionRate?: number;
   averageCompletionHours?: number;
   activeWorkload?: number;
@@ -177,7 +135,6 @@ export interface EmployeeStatsData {
   stats: ApiEmployeeStats;
 }
 
-/** The lighter roll-up returned inline by `GET /employees/:id`. */
 export interface EmployeeSummary {
   projectCount?: number;
   totalTasks?: number;
@@ -189,7 +146,6 @@ export interface EmployeeDetailData {
   summary?: EmployeeSummary;
 }
 
-/** `GET /employees/:id/projects` — `projectRole` is scoped to that project. */
 export interface ApiEmployeeProject {
   _id?: string;
   id?: string;
@@ -239,11 +195,6 @@ export interface SuspendEmployeeRequest {
   reason?: string;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Projects                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/** People arrive populated on reads and as bare ids on writes. */
 export interface ApiProjectPerson {
   _id?: string;
   id?: string;
@@ -255,11 +206,9 @@ export interface ApiProjectPerson {
 
 export type ApiPersonRef = string | ApiProjectPerson;
 
-/** A `null` on any field means "inherit the organization default". */
 export interface ApiProjectWorkflow {
   requireTaskApproval?: boolean | null;
   approverRole?: string | null;
-  /** Explicit approver ids; take precedence over `approverRole`. */
   approvers?: ApiPersonRef[] | null;
   defaultPriority?: string | null;
   allowMemberTaskCreation?: boolean | null;
@@ -267,10 +216,6 @@ export interface ApiProjectWorkflow {
   autoCompleteOnAllTasksDone?: boolean | null;
 }
 
-/**
- * Task counts. The list endpoint returns the buckets inline; the detail
- * endpoint nests them under `byStatus` and adds `remaining`.
- */
 export interface ApiTaskStats {
   total?: number;
   pending?: number;
@@ -307,7 +252,6 @@ export interface ProjectData {
   project: ApiProject;
 }
 
-/** The detail endpoint returns `taskStats` as a sibling of `project`. */
 export interface ProjectDetailData {
   project: ApiProject;
   taskStats?: ApiTaskStats;
@@ -385,34 +329,23 @@ export interface ProjectMemberIdsRequest {
   memberIds: string[];
 }
 
-/** `set` replaces the list, `add` appends. */
-/* -------------------------------------------------------------------------- */
-/* Tasks                                                                      */
-/* -------------------------------------------------------------------------- */
-
 export interface ApiTaskEvent {
   _id?: string;
   id?: string;
   at?: string;
   createdAt?: string;
   timestamp?: string;
-  /** Sent flat, not as a populated document. */
   actorId?: string;
   actorName?: string;
-  /** `Admin` | `Employee` — admins are not in the employee directory. */
   actorModel?: string;
-  /** Accepted in case another endpoint populates the actor instead. */
   actor?: ApiPersonRef;
   user?: ApiPersonRef;
-  /** A machine code such as `review_approve`, not display text. */
   action?: string;
   event?: string;
   type?: string;
-  /** A ready-made sentence, e.g. "Task approved by Admin One: LGTM". */
   message?: string;
   detail?: string;
   comments?: string;
-  /** Extras per action: `{from,to}`, `{assignee}`, `{commentId}`. */
   meta?: Record<string, unknown>;
 }
 
@@ -421,10 +354,6 @@ export interface ApiTask {
   id?: string;
   title: string;
   description?: string | null;
-  /**
-   * The server populates `projectId` with the project document rather than
-   * sending a bare id, so this accepts either form.
-   */
   project?: ApiPersonRef;
   projectId?: ApiPersonRef;
   createdBy?: ApiPersonRef;
@@ -440,7 +369,6 @@ export interface ApiTask {
   completedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
-  /** Reviewer note left on a reject or return. */
   comments?: string | null;
   reviewComment?: string | null;
   timeline?: ApiTaskEvent[];
@@ -461,11 +389,9 @@ export interface TaskApproversData {
 
 export interface TaskListParams {
   search?: string;
-  /** Single value or comma-separated list. */
   status?: string;
   priority?: string;
   projectId?: string;
-  /** An employee id, or `none` for unassigned. */
   assignee?: string;
   unassigned?: boolean;
   createdBy?: string;
@@ -507,10 +433,6 @@ export interface UpdateTaskRequest {
   status?: string;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Comments                                                                   */
-/* -------------------------------------------------------------------------- */
-
 export interface ApiComment {
   _id?: string;
   id?: string;
@@ -518,18 +440,15 @@ export interface ApiComment {
   taskId?: ApiPersonRef;
   parentId?: string | null;
   content?: string;
-  /** Sent flat, like the timeline actor. */
   authorId?: string;
   authorName?: string;
   authorModel?: string;
-  /** Ids when created, populated documents when listed. */
   mentions?: ApiPersonRef[];
   replyCount?: number;
   isEdited?: boolean;
   isDeleted?: boolean;
   createdAt?: string;
   updatedAt?: string;
-  /** Nested on the list endpoint, oldest first. */
   replies?: ApiComment[];
 }
 
@@ -547,7 +466,6 @@ export interface MentionableUsersData {
 
 export interface CreateCommentRequest {
   content: string;
-  /** Omit for a top-level comment. Replying to a reply is rejected. */
   parentId?: string;
 }
 
@@ -555,7 +473,6 @@ export interface UpdateCommentRequest {
   content: string;
 }
 
-/** Approval decisions all use `comments`; reject and return require it. */
 export interface TaskDecisionRequest {
   comments?: string;
 }
@@ -566,7 +483,6 @@ export interface ProjectAssignRequest {
   mode?: "set" | "add";
 }
 
-/** `GET /admin/organization/summary` — headcount and project counts only. */
 export interface OrganizationSummary {
   totalEmployees: number;
   activeEmployees: number;
@@ -577,11 +493,6 @@ export interface OrganizationSummary {
   organizationCreatedAt: string;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Payloads (the `data` of each response)                                     */
-/* -------------------------------------------------------------------------- */
-
-/** `register` and `login`: tokens sit beside the user, not inside it. */
 export interface SessionData {
   user: AdminUser;
   accessToken: string;
@@ -604,10 +515,6 @@ export interface OrganizationData {
 export interface LogoUploadData {
   logoUrl: string;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Organization requests                                                      */
-/* -------------------------------------------------------------------------- */
 
 export interface UpdateOrganizationRequest {
   name?: string;
@@ -647,10 +554,6 @@ export interface UpdateProjectWorkflowRequest {
   defaultPriority: string;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Requests                                                                   */
-/* -------------------------------------------------------------------------- */
-
 export interface RegisterRequest {
   organizationName: string;
   name: string;
@@ -669,10 +572,6 @@ export interface ForgotPasswordRequest {
   email: string;
 }
 
-/**
- * Outside production the raw code is echoed back so the flow is testable
- * before a mail transport exists. Never present in production.
- */
 export interface ForgotPasswordData {
   otp?: string;
   expiresAt: string;
@@ -683,7 +582,6 @@ export interface VerifyResetOtpRequest {
   otp: string;
 }
 
-/** The OTP is traded for this token; only the token can set a new password. */
 export interface VerifyResetOtpData {
   resetToken: string;
   expiresAt: string;
@@ -698,10 +596,6 @@ export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Analytics                                                                  */
-/* -------------------------------------------------------------------------- */
 
 export interface EmployeeCounts {
   totalEmployees: number;
@@ -734,7 +628,6 @@ export interface TaskCounts {
   returned: number;
   cancelled: number;
   overdue: number;
-  /** Already a percentage, e.g. `61.9`. */
   completionRate: number;
   byPriority?: Record<string, number>;
 }
@@ -761,7 +654,6 @@ export interface ProjectAnalyticsRow {
   pendingApprovalTasks: number;
   overdueTasks: number;
   completionPercentage: number;
-  /** Null until at least one task has completed. */
   estimatedCompletionDate?: string | null;
 }
 
@@ -802,7 +694,6 @@ export interface EmployeeAnalyticsRow {
   assignedWorkload: number;
   completionRate: number;
   averageCompletionHours: number;
-  /** Completion rate minus half the overdue rate, floored at 0. */
   productivityScore: number;
 }
 
@@ -835,10 +726,6 @@ export interface TeamAnalyticsData {
   teams: TeamAnalyticsRow[];
 }
 
-/* -------------------------------------------------------------------------- */
-/* Reports                                                                    */
-/* -------------------------------------------------------------------------- */
-
 export type ReportType = "projects" | "employees" | "teams" | "tasks";
 export type ReportFormat = "json" | "csv" | "excel" | "pdf";
 
@@ -865,14 +752,9 @@ export interface ReportData {
   generatedAt: string;
   columns: ReportColumn[];
   rowCount: number;
-  /** True when the 5000-row cap trimmed the result. */
   truncated: boolean;
   rows: Record<string, unknown>[];
 }
-
-/* -------------------------------------------------------------------------- */
-/* Notifications                                                              */
-/* -------------------------------------------------------------------------- */
 
 export interface ApiNotification {
   _id?: string;
@@ -907,14 +789,9 @@ export interface NotificationListParams {
   limit?: number;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Activity logs                                                              */
-/* -------------------------------------------------------------------------- */
-
 export interface ApiActivityLog {
   _id?: string;
   id?: string;
-  /** Dotted vocabulary, e.g. `employee.approved`. */
   action?: string;
   description?: string;
   actorId?: string;

@@ -1,10 +1,3 @@
-/**
- * Organization profile, settings and workflow API.
- *
- * One function per endpoint in the Organization API spec. Responses go through
- * `unwrapResponse`, so these work whether or not the endpoint envelopes its
- * payload.
- */
 
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
@@ -19,10 +12,6 @@ import type {
   UpdateOrganizationRequest,
   UpdateSettingsRequest,
 } from "./types";
-
-/* -------------------------------------------------------------------------- */
-/* Profile                                                                    */
-/* -------------------------------------------------------------------------- */
 
 export async function getOrganization(): Promise<ApiResponse<OrganizationData>> {
   const { data } = await axiosPrivate.get(ADMIN_ENDPOINTS.ORGANIZATION);
@@ -39,7 +28,6 @@ export async function updateOrganization(
   return unwrapResponse<OrganizationData>(data);
 }
 
-/** Multipart upload — the file goes in a `logo` field. */
 export async function uploadOrganizationLogo(
   file: File,
 ): Promise<ApiResponse<LogoUploadData>> {
@@ -54,10 +42,6 @@ export async function uploadOrganizationLogo(
   return unwrapResponse<LogoUploadData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Settings                                                                   */
-/* -------------------------------------------------------------------------- */
-
 export async function getOrganizationSettings(): Promise<
   ApiResponse<OrganizationSettingsPayload>
 > {
@@ -65,7 +49,6 @@ export async function getOrganizationSettings(): Promise<
   return unwrapResponse<OrganizationSettingsPayload>(data);
 }
 
-/** Accepts a partial payload — send only the section the admin edited. */
 export async function updateOrganizationSettings(
   payload: UpdateSettingsRequest,
 ): Promise<ApiResponse<EmptyData>> {
@@ -73,15 +56,6 @@ export async function updateOrganizationSettings(
   return unwrapResponse<EmptyData>(data);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Summary                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Headcount and project counts. Covers only part of what the dashboard shows —
- * task totals still come from the analytics endpoints — so the dashboard does
- * not call this yet.
- */
 export async function getOrganizationSummary(): Promise<
   ApiResponse<OrganizationSummary>
 > {

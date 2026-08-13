@@ -1,10 +1,3 @@
-/**
- * Maps API payloads onto the app's domain types.
- *
- * The wire shapes are narrower than what the UI renders — no avatar colour, and
- * a few fields go by different names — so this is where the gap is filled,
- * rather than in each component.
- */
 
 import type {
   ActivityKind,
@@ -48,7 +41,6 @@ import type {
   EmployeeStats,
 } from "./types";
 
-/** The categorical slots, reused as avatar tints. */
 const AVATAR_COLORS = [
   "#2a78d6",
   "#eb6834",
@@ -60,12 +52,6 @@ const AVATAR_COLORS = [
   "#e34948",
 ];
 
-/**
- * Picks a stable colour from the employee's id.
- *
- * Deterministic on purpose: a random pick would differ between the server and
- * client renders and trip hydration.
- */
 export function avatarColorFor(seed: string): string {
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {
@@ -74,11 +60,6 @@ export function avatarColorFor(seed: string): string {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
-/**
- * The API speaks snake_case (`team_lead`, `active`); the UI speaks title case
- * (`Team Lead`, `Active`). Comparing on a normalised key covers both, plus the
- * hyphenated and spaced variants.
- */
 const normalizeKey = (value: string) =>
   value.trim().toLowerCase().replace(/[\s_-]+/g, "");
 
@@ -96,12 +77,6 @@ function toStatus(value: string | undefined): EmployeeStatus {
   );
 }
 
-/**
- * Converts a UI role back to the API's snake_case enum for writes.
- *
- * The list endpoint stores `team_lead`, so that is treated as canonical — the
- * written spec's `"Team Lead"` form appears to be display text only.
- */
 export function toApiRole(role: Role): string {
   return role.trim().toLowerCase().replace(/\s+/g, "_");
 }
@@ -110,7 +85,6 @@ export function toApiStatus(status: EmployeeStatus): string {
   return status.trim().toLowerCase();
 }
 
-/** Trims an ISO timestamp down to the `YYYY-MM-DD` the UI formats. */
 function toDateOnly(value: string | null | undefined): string | null {
   if (!value) return null;
   return value.slice(0, 10);
@@ -123,8 +97,6 @@ export function toEmployee(source: ApiEmployee): Employee {
     email: source.email,
     role: toRole(source.role),
     status: toStatus(source.status),
-    // The API names these `createdAt` / `approvedAt`; the spec called them
-    // `registeredAt` / `joinedAt`. Accept either.
     registeredAt:
       toDateOnly(source.registeredAt) ?? toDateOnly(source.createdAt) ?? "",
     joinedAt: toDateOnly(source.joinedAt) ?? toDateOnly(source.approvedAt),
@@ -140,13 +112,6 @@ export function toEmployees(source: ApiEmployee[]): Employee[] {
   return source.map(toEmployee);
 }
 
-/**
- * Maps the server's employee statistics onto the roll-up the profile renders.
- *
- * Two conversions matter: the server reports mean completion in **hours** while
- * the UI shows days, and `completionRate` already arrives as a percentage
- * (`75.0`), so it is rounded rather than multiplied.
- */
 export function toEmployeeStats(source: ApiEmployeeStats): EmployeeStats {
   const assigned = source.totalTasks ?? 0;
   const completed = source.completedTasks ?? 0;
@@ -166,15 +131,6 @@ export function toEmployeeStats(source: ApiEmployeeStats): EmployeeStats {
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Tasks                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The task status enum is snake_case on the wire (`in_progress`), and its
- * `pending` bucket is the UI's "To Do". Anything unrecognised falls back to
- * "To Do" rather than throwing.
- */
 export function toTaskStatus(value: string | undefined): TaskStatus {
   if (!value) return "To Do";
   const key = normalizeKey(value);
@@ -200,11 +156,6 @@ export function toTaskStatus(value: string | undefined): TaskStatus {
   );
 }
 
-
-/* -------------------------------------------------------------------------- */
-/* Projects                                                                   */
-/* -------------------------------------------------------------------------- */
-
 function toProjectStatus(value: string | undefined): ProjectStatus {
   if (!value) return "Active";
   const key = normalizeKey(value);
@@ -221,7 +172,6 @@ export function toPriority(value: string | null | undefined): Priority {
   );
 }
 
-/** `On Hold` → `on_hold`. */
 export function toApiProjectStatus(status: ProjectStatus): string {
   return status.trim().toLowerCase().replace(/\s+/g, "_");
 }
@@ -230,12 +180,10 @@ export function toApiPriority(priority: Priority): string {
   return priority.trim().toLowerCase();
 }
 
-/** Mongo documents use `_id`; some payloads normalise to `id`. */
 function idOf(source: { _id?: string; id?: string }): string {
   return source._id ?? source.id ?? "";
 }
 
-/** A person reference is either a bare id or a populated document. */
 function refToId(ref: ApiPersonRef): string {
   return typeof ref === "string" ? ref : idOf(ref);
 }
@@ -258,10 +206,6 @@ function refsToIds(refs: ApiPersonRef[] | undefined): string[] {
   return (refs ?? []).map(refToId).filter(Boolean);
 }
 
-/**
- * Normalises both task-stat shapes: the list returns buckets inline, the detail
- * endpoint nests them under `byStatus` and adds `remaining`.
- */
 export function toProjectTaskStats(
   source: ApiTaskStats | undefined,
 ): ProjectTaskStats | undefined {
@@ -295,8 +239,6 @@ function toWorkflow(
   const workflow = source ?? {};
 
   return {
-    // `null` means "inherit the organization default"; these are the defaults
-    // the UI shows until the organization settings endpoint says otherwise.
     requireTaskApproval: workflow.requireTaskApproval ?? true,
     approverRole: workflow.approverRole ? toRole(workflow.approverRole) : null,
     approverIds: refsToIds(workflow.approvers ?? undefined),
@@ -317,7 +259,6 @@ export function toProject(source: ApiProject): Project {
     .map(refToPerson)
     .filter((person): person is ProjectPerson => person !== null);
 
-  // Managers and team leads are also members, so the lists overlap.
   const unique = new Map(people.map((person) => [person.id, person]));
 
   return {
@@ -345,7 +286,6 @@ export function toProjects(source: ApiProject[]): Project[] {
   return source.map(toProject);
 }
 
-/** Strips the domain workflow back to the API's partial payload. */
 export function toApiWorkflow(workflow: ProjectWorkflow): ApiProjectWorkflow {
   return {
     requireTaskApproval: workflow.requireTaskApproval,
@@ -360,11 +300,6 @@ export function toApiWorkflow(workflow: ProjectWorkflow): ApiProjectWorkflow {
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Task documents                                                             */
-/* -------------------------------------------------------------------------- */
-
-/** `To Do` → `pending`, `In Progress` → `in_progress`. */
 export function toApiTaskStatus(status: TaskStatus): string {
   if (status === "To Do") return "pending";
   return status.trim().toLowerCase().replace(/\s+/g, "_");
@@ -380,11 +315,6 @@ function toActorModel(
   return undefined;
 }
 
-/**
- * `action` is a machine code (`review_approve`), not display text. Rendering it
- * raw put "review_approve" in the UI, so map the known codes to phrases and
- * fall back to de-snaking anything new.
- */
 const ACTION_PHRASES: Record<string, string> = {
   created: "created the task",
   assigned: "assigned the task",
@@ -407,14 +337,6 @@ function toActionPhrase(value: string | undefined): string {
   return ACTION_PHRASES[value] ?? value.replace(/_/g, " ");
 }
 
-/**
- * The supporting line under an event.
- *
- * The server's `message` is a whole sentence that already names the actor
- * ("Task approved by Admin One: LGTM"), so repeating it beneath "Admin One
- * approved the task" would say everything twice. Only the part after the colon
- * — the reviewer's actual note — is worth keeping.
- */
 function toEventDetail(source: ApiTaskEvent): string | undefined {
   if (source.detail) return source.detail;
   if (source.comments) return source.comments;
@@ -434,15 +356,12 @@ function toEventDetail(source: ApiTaskEvent): string | undefined {
 }
 
 function toTaskEvent(source: ApiTaskEvent, index: number): TaskEvent {
-  // The actor arrives flat (`actorId` / `actorName` / `actorModel`); the
-  // populated forms are accepted only as a fallback.
   const actorRef = source.actor ?? source.user;
   const person = actorRef ? refToPerson(actorRef) : null;
   const actorId = source.actorId ?? (actorRef ? refToId(actorRef) : "") ?? "";
 
   return {
     id: idOf(source) || `event-${index}`,
-    // Full ISO, not date-only: the timeline shows the time of day.
     at: source.createdAt ?? source.at ?? source.timestamp ?? "",
     actorId,
     actorModel: toActorModel(source.actorModel),
@@ -455,10 +374,6 @@ function toTaskEvent(source: ApiTaskEvent, index: number): TaskEvent {
 }
 
 export function toTask(source: ApiTask): Task {
-  // The server populates `projectId` with the project document. Taking it as
-  // an id would leak an object into the id field, breaking the project link
-  // and the project filter, so resolve both the id and the name from whichever
-  // key is present.
   const projectRef = source.project ?? source.projectId;
   const projectId = projectRef ? refToId(projectRef) : "";
   const projectName =
@@ -514,17 +429,11 @@ export function toTaskEvents(source: ApiTaskEvent[]): TaskEvent[] {
   return source.map(toTaskEvent);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Comments                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/** A mention is an id on create and a populated document on read. */
 function toMentionUser(ref: ApiPersonRef): MentionUser | null {
   const id = refToId(ref);
   if (!id) return null;
 
   if (typeof ref === "string") {
-    // Only the id was sent; the name is resolved by the caller if needed.
     return { id, name: "", avatarColor: avatarColorFor(id) };
   }
 
@@ -559,10 +468,8 @@ export function toComment(source: ApiComment): TaskComment {
     replyCount: source.replyCount ?? source.replies?.length ?? 0,
     isEdited: source.isEdited ?? false,
     isDeleted: source.isDeleted ?? false,
-    // Full ISO — comments are timestamped to the minute in the UI.
     createdAt: source.createdAt ?? "",
     updatedAt: source.updatedAt ?? undefined,
-    // Replies are one level deep, so this never recurses further.
     replies: (source.replies ?? []).map(toComment),
   };
 }
@@ -571,11 +478,6 @@ export function toComments(source: ApiComment[]): TaskComment[] {
   return source.map(toComment);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Notifications                                                              */
-/* -------------------------------------------------------------------------- */
-
-/** Maps the server's `type` onto the icon/colour buckets the inbox renders. */
 function toNotificationKind(value: string | undefined): NotificationKind {
   const key = normalizeKey(value ?? "");
   if (key.includes("register") || key.includes("employee")) return "registration";
@@ -586,7 +488,6 @@ function toNotificationKind(value: string | undefined): NotificationKind {
   return "task";
 }
 
-/** Builds an in-app link from the entity a notification points at. */
 function toNotificationHref(
   source: ApiNotification,
 ): string | undefined {
@@ -622,11 +523,6 @@ export function toNotifications(source: ApiNotification[]): AppNotification[] {
   return source.map(toNotification);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Activity logs                                                              */
-/* -------------------------------------------------------------------------- */
-
-/** `employee.approved` → the icon bucket the log groups by. */
 function toActivityKind(action: string | undefined, entityType?: string): ActivityKind {
   const key = normalizeKey(`${action ?? ""} ${entityType ?? ""}`);
   if (key.includes("role")) return "role";
@@ -644,8 +540,6 @@ export function toActivityLog(source: ApiActivityLog): ActivityLog {
     id: idOf(source),
     kind: toActivityKind(source.action, source.entityType),
     actor: source.actorName ?? "System",
-    // `description` already reads as a sentence; the dotted action is a
-    // fallback so an undocumented entry still says something.
     message: source.description ?? toActionPhrase(source.action?.split(".").pop()),
     at: source.createdAt ?? "",
   };

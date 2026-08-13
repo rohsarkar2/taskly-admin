@@ -7,20 +7,11 @@ import { ChartEmpty, ChartTable, Legend, SERIES } from "./chart-kit";
 export interface BarDatum {
   label: string;
   value: number;
-  /** Optional per-row override; defaults to the single sequential hue. */
   color?: string;
-  /** Optional secondary text shown under the label. */
   meta?: string;
   href?: string;
 }
 
-/**
- * Horizontal bars for "compare magnitude".
- *
- * One hue by default — magnitude is carried by bar length, not by colour — with
- * the value direct-labelled at the end of every bar. Rows are HTML rather than
- * SVG so long category names wrap and stay selectable.
- */
 export function HBarChart({
   data,
   valueSuffix = "",
@@ -41,8 +32,6 @@ export function HBarChart({
   return (
     <div className={className}>
       <ul className="space-y-3">
-        {/* Keyed by position: labels are runtime data (employee and project
-            names) and can legitimately repeat. */}
         {data.map((d, index) => (
           <li key={index} className="group">
             <div className="mb-1 flex items-baseline justify-between gap-3">
@@ -90,10 +79,6 @@ export interface GroupedRow {
   values: number[];
 }
 
-/**
- * Grouped horizontal bars for a small number of distinct series (2–3).
- * Each series takes the next categorical slot in fixed order.
- */
 export function GroupedBarChart({
   rows,
   seriesLabels,
@@ -162,12 +147,6 @@ export interface StackSegment {
   color?: string;
 }
 
-/**
- * Single horizontal stacked bar for part-to-whole.
- *
- * Segments are separated by a 2px surface gap so adjacent fills never touch,
- * and every segment is named in the legend with its value.
- */
 export function StackedBar({
   segments,
   className,
@@ -239,21 +218,27 @@ export function StackedBar({
   );
 }
 
-/** A single ratio against its limit — one hue, same-ramp track. */
 export function Meter({
   value,
   max = 100,
   label,
   className,
   color = "var(--viz-1)",
+  track,
+  size = "md",
 }: {
   value: number;
   max?: number;
   label?: string;
   className?: string;
   color?: string;
+  /** Defaults to a light step of the fill's own hue, so state reads across the bar. */
+  track?: string;
+  size?: "sm" | "md";
 }) {
   const pct = Math.min(Math.round((value / max) * 100), 100);
+  const trackColor =
+    track ?? `color-mix(in oklch, ${color} 16%, var(--viz-track))`;
 
   return (
     <div className={cn("w-full", className)}>
@@ -264,8 +249,11 @@ export function Meter({
         </div>
       )}
       <div
-        className="h-2 w-full overflow-hidden rounded-full"
-        style={{ background: "var(--viz-track)" }}
+        className={cn(
+          "w-full overflow-hidden rounded-full",
+          size === "sm" ? "h-1.5" : "h-2",
+        )}
+        style={{ background: trackColor }}
         role="meter"
         aria-valuenow={pct}
         aria-valuemin={0}

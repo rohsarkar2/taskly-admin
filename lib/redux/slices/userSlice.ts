@@ -1,6 +1,4 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-// Type-only import — keeps the API wire types as the single source of truth
-// without pulling the axios instances into the store's import graph.
 import type { AdminUser, Organization } from "@/lib/api/types";
 
 interface UserState {

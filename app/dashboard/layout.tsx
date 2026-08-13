@@ -7,7 +7,7 @@ import {
   SidebarInset,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppSidebar, SignOutDialog } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Bell, Copy, User, Settings, LogOut, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,11 +49,14 @@ export default function DashboardLayout({
   const orgId =
     organization?.uniqueOrganizationId ??
     organizationSettings.uniqueOrganizationId;
+  const orgName = organization?.name || "Taskly";
+  const orgLogo = organization?.logo || organization?.logoUrl || null;
 
-  /**
-   * The bell shows the five most recent notifications. Failures are silent —
-   * an unreachable inbox should not block the dashboard chrome.
-   */
+  const [brokenLogo, setBrokenLogo] = React.useState<string | null>(null);
+  const showLogo = orgLogo !== null && brokenLogo !== orgLogo;
+
+  const [signOutOpen, setSignOutOpen] = React.useState(false);
+
   const [notifications, setNotifications] = React.useState<AppNotification[]>(
     [],
   );
@@ -113,12 +116,21 @@ export default function DashboardLayout({
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-1 h-4" />
 
-            {/* Organization Info */}
             <div className="flex items-center gap-2">
               <div className="hidden sm:flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-1.5">
-                <Building2 className="w-4 h-4 text-gray-500" />
+                {showLogo ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- remote host is not known at build time
+                  <img
+                    src={orgLogo}
+                    alt={`${orgName} logo`}
+                    className="size-5 shrink-0 rounded object-cover"
+                    onError={() => setBrokenLogo(orgLogo)}
+                  />
+                ) : (
+                  <Building2 className="w-4 h-4 text-gray-500" />
+                )}
                 <span className="text-xs font-medium text-gray-700">
-                  {organization?.name || "Taskly"}
+                  {orgName}
                 </span>
               </div>
               <Button
@@ -134,7 +146,6 @@ export default function DashboardLayout({
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              {/* Notifications */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -220,7 +231,6 @@ export default function DashboardLayout({
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* User Profile Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -267,7 +277,7 @@ export default function DashboardLayout({
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    onClick={handleSignOut}
+                    onSelect={() => setSignOutOpen(true)}
                     className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50"
                   >
                     <LogOut className="mr-2 h-4 w-4" />
@@ -278,10 +288,16 @@ export default function DashboardLayout({
             </div>
           </header>
 
-          <main className="flex flex-1 flex-col gap-6 p-4 md:p-6 lg:p-8 bg-gray-50/30">
+          <main className="flex flex-1 flex-col gap-6 p-4 md:p-6  bg-gray-50/30">
             {children}
           </main>
         </SidebarInset>
+
+        <SignOutDialog
+          open={signOutOpen}
+          onOpenChange={setSignOutOpen}
+          onConfirm={handleSignOut}
+        />
       </SidebarProvider>
     </AuthGuard>
   );

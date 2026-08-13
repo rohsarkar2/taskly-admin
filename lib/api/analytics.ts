@@ -1,9 +1,3 @@
-/**
- * Organization analytics.
- *
- * Every figure the dashboard and analytics pages show is computed server-side;
- * nothing here derives numbers from a task list on the client.
- */
 
 import { axiosPrivate } from "@/app/axios/Axios";
 import { ADMIN_ENDPOINTS } from "./endpoints";
@@ -19,7 +13,6 @@ import type {
   TrendsData,
 } from "./types";
 
-/** One call for the whole dashboard header. */
 export async function getAnalyticsOverview(): Promise<
   ApiResponse<AnalyticsOverviewData>
 > {
@@ -27,7 +20,6 @@ export async function getAnalyticsOverview(): Promise<
   return unwrapResponse<AnalyticsOverviewData>(data);
 }
 
-/** The employee block on its own. */
 export async function getOrganizationAnalytics(): Promise<
   ApiResponse<EmployeeCounts>
 > {
@@ -46,7 +38,6 @@ export async function getProjectAnalytics(
   return unwrapResponse<ProjectAnalyticsData>(data);
 }
 
-/** Summary plus a daily created/completed trend. `days` maxes out at 180. */
 export async function getTaskAnalytics(
   params: { projectId?: string; days?: number } = {},
 ): Promise<ApiResponse<TaskAnalyticsData>> {
@@ -70,7 +61,6 @@ export async function getEmployeeAnalytics(
   return unwrapResponse<EmployeeAnalyticsData>(data);
 }
 
-/** Per-project team breakdown. Omit `projectId` for every project. */
 export async function getTeamAnalytics(
   params: { projectId?: string } = {},
 ): Promise<ApiResponse<TeamAnalyticsData>> {
