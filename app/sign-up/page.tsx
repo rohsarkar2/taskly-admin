@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -24,7 +25,6 @@ import {
   Lock,
   Phone,
   Users,
-  CheckCircle2,
   Copy,
   ArrowRight,
   Sparkles,
@@ -142,13 +142,19 @@ export default function SignUp() {
   // Registration succeeded — hand over the organization ID before anything else.
   if (created) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-white px-4 py-8">
+      <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-gray-50 to-white px-4 py-8">
         <div className="w-full max-w-2xl">
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
             {/* Success Header */}
-            <div className="bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] p-8 text-center">
-              <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-12 h-12 text-white" />
+            <div className="bg-linear-to-r from-[#2d5a4c] to-[#3a6f5c] p-8 text-center">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Image
+                  src="/images/taskly-icon.png"
+                  alt="Taskly"
+                  width={80}
+                  height={80}
+                  className="rounded-full"
+                />
               </div>
               <h1 className="text-3xl font-bold text-white mb-2">
                 {formData.organizationName} is ready!
@@ -160,7 +166,7 @@ export default function SignUp() {
 
             <div className="p-8 space-y-6">
               {/* Organization ID Card */}
-              <div className="bg-gradient-to-br from-[#2d5a4c]/5 to-[#3a6f5c]/5 rounded-xl p-6 border-2 border-[#2d5a4c]/20">
+              <div className="bg-linear-to-br from-[#2d5a4c]/5 to-[#3a6f5c]/5 rounded-xl p-6 border-2 border-[#2d5a4c]/20">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Building2 className="w-5 h-5 text-[#2d5a4c]" />
@@ -222,7 +228,7 @@ export default function SignUp() {
                       key={item.step}
                       className="flex gap-4 p-4 rounded-lg bg-gray-50 border border-gray-200"
                     >
-                      <div className="w-8 h-8 rounded-full bg-[#2d5a4c] text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-[#2d5a4c] text-white flex items-center justify-center font-bold text-sm shrink-0">
                         {item.step}
                       </div>
                       <div>
@@ -240,7 +246,7 @@ export default function SignUp() {
 
               {/* Action Button */}
               <Button
-                className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20"
+                className="w-full h-12 bg-linear-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20"
                 onClick={() =>
                   router.push(created.signedIn ? "/dashboard" : "/sign-in")
                 }
@@ -268,7 +274,7 @@ export default function SignUp() {
         stays put while the form moves. `overflow-hidden` keeps the blurred
         decorations from creating a scrollable area of their own.
       */}
-      <div className="relative hidden shrink-0 overflow-hidden bg-gradient-to-br from-[#2d5a4c] via-[#3a6f5c] to-[#4a8570] lg:flex lg:w-1/2">
+      <div className="relative hidden shrink-0 overflow-hidden bg-linear-to-br from-[#2d5a4c] via-[#3a6f5c] to-[#4a8570] lg:flex lg:w-1/2">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 left-20 w-72 h-72 bg-white rounded-full blur-3xl" />
@@ -283,8 +289,14 @@ export default function SignUp() {
         <div className="relative z-10 flex h-full w-full flex-col justify-between gap-10 overflow-y-auto p-12">
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                <CheckCircle2 className="w-7 h-7 text-white" />
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center">
+                <Image
+                  src="/images/taskly-icon.png"
+                  alt="Taskly"
+                  width={48}
+                  height={48}
+                  className="rounded-2xl"
+                />
               </div>
               <h1 className="text-3xl font-bold text-white">Taskly</h1>
             </div>
@@ -301,7 +313,7 @@ export default function SignUp() {
 
           <div className="relative z-10 space-y-6">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+              <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center shrink-0">
                 <Zap className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -312,7 +324,7 @@ export default function SignUp() {
               </div>
             </div>
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center flex-shrink-0">
+              <div className="w-12 h-12 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center shrink-0">
                 <Shield className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -343,8 +355,14 @@ export default function SignUp() {
           <div className="w-full max-w-md">
             <div className="mb-6  ">
               <div className="lg:hidden flex items-center gap-2 mb-6">
-                <div className="w-10 h-10 bg-[#2d5a4c] rounded-xl flex items-center justify-center">
-                  <CheckCircle2 className="w-6 h-6 text-white" />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center">
+                  <Image
+                    src="/images/taskly-icon.png"
+                    alt="Taskly"
+                    width={40}
+                    height={40}
+                    className="rounded-xl"
+                  />
                 </div>
                 <h1 className="text-2xl font-bold text-gray-900">Taskly</h1>
               </div>
@@ -564,7 +582,7 @@ export default function SignUp() {
                     >
                       <SelectTrigger
                         id="organizationSize"
-                        className="w-full pl-11 !h-12 border border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
+                        className="w-full pl-11 h-12! border border-gray-300 focus:border-[#2d5a4c] focus:ring-[#2d5a4c]"
                         style={{ height: "3rem" }}
                       >
                         <SelectValue placeholder="Select size" />
@@ -622,7 +640,7 @@ export default function SignUp() {
               {/* Submit Button */}
               <Button
                 type="submit"
-                className="w-full h-12 bg-gradient-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
+                className="w-full h-12 bg-linear-to-r from-[#2d5a4c] to-[#3a6f5c] hover:from-[#234539] hover:to-[#2d5a4c] text-white font-medium shadow-lg shadow-[#2d5a4c]/20 transition-all duration-200"
                 disabled={isLoading}
               >
                 {isLoading ? (

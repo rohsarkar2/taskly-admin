@@ -58,6 +58,8 @@ import {
   tasks as seedTasks,
 } from "@/lib/mock-data";
 import type { Project, Task } from "@/lib/types";
+import { useAppDispatch } from "@/lib/redux/hooks";
+import { fetchBadgeCounts } from "@/lib/redux/thunks/badges";
 
 type Verdict = "approve" | "reject" | "return";
 
@@ -86,6 +88,7 @@ const VERDICT_COPY: Record<
 };
 
 export default function ApprovalsPage() {
+  const dispatch = useAppDispatch();
   const [queue, setQueue] = React.useState<Task[]>([]);
   const [projectOptions, setProjectOptions] = React.useState<Project[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -181,6 +184,8 @@ export default function ApprovalsPage() {
               ? await rejectTask(decided.id, payload)
               : await returnTask(decided.id, payload);
         message = response.message;
+        // The task leaves the pending-approval queue whichever way it went.
+        dispatch(fetchBadgeCounts());
       }
 
       setQueue((prev) => prev.filter((t) => t.id !== decided.id));

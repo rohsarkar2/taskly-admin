@@ -113,7 +113,7 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8 text-center">
+    <div className="flex min-h-55 flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8 text-center">
       <p className="font-medium">{title}</p>
       {description && (
         <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
