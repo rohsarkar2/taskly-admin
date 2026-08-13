@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import {
+  Activity,
   AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
   ClipboardList,
   FolderKanban,
+  Inbox,
+  RefreshCw,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -25,28 +30,42 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import * as React from "react";
-import { HBarChart, StackedBar } from "@/components/charts/bar-chart";
-import { LineChart } from "@/components/charts/line-chart";
+import {
+  CategoryBarChart,
+  CompletionGauge,
+  ProjectStackedBars,
+  TrendAreaChart,
+} from "@/components/charts/analytics-charts";
+import type {
+  CategoryDatum,
+  ProjectBarDatum,
+  TrendDatum,
+} from "@/components/charts/analytics-charts";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   EmployeeStatusBadge,
   EmptyState,
   PageHeader,
   PersonCell,
+  PRIORITY_COLOR,
   PriorityBadge,
-  ProgressCell,
   SampleDataNotice,
   StatGrid,
   StatTile,
+  TASK_STATUS_COLOR,
   TaskStatusBadge,
 } from "@/components/dashboard/ui-bits";
+import { toActivityLogs, toEmployees, toTasks } from "@/lib/api/adapters";
 import {
-  toActivityLogs,
-  toEmployees,
-  toTasks,
-} from "@/lib/api/adapters";
-import { getAnalyticsOverview, getProjectAnalytics, getTaskAnalytics } from "@/lib/api/analytics";
-import type { AnalyticsOverviewData, ProjectAnalyticsRow, TrendPoint } from "@/lib/api/analytics";
+  getAnalyticsOverview,
+  getProjectAnalytics,
+  getTaskAnalytics,
+} from "@/lib/api/analytics";
+import type {
+  AnalyticsOverviewData,
+  ProjectAnalyticsRow,
+  TrendPoint,
+} from "@/lib/api/analytics";
 import { listRecentActivity } from "@/lib/api/activity";
 import { listPendingEmployees } from "@/lib/api/employees";
 import { listTasks } from "@/lib/api/tasks";
@@ -57,9 +76,12 @@ import {
   relativeToToday,
 } from "@/lib/mock-data";
 import { useAppSelector } from "@/lib/redux/hooks";
-import type { ActivityLog, Employee, Task } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import type { ActivityLog, Employee, Priority, Task } from "@/lib/types";
 
-const TREND_DAYS = 30;
+const RANGES = [7, 30, 90] as const;
+const DEFAULT_RANGE = 30;
+const PROJECT_BARS = 8;
 
 export default function DashboardClient() {
   const organization = useAppSelector((state) => state.user.organization);
@@ -70,35 +92,49 @@ export default function DashboardClient() {
   const [projectRows, setProjectRows] = React.useState<ProjectAnalyticsRow[]>(
     [],
   );
-  const [trend, setTrend] = React.useState<TrendPoint[]>([]);
   const [recentTasks, setRecentTasks] = React.useState<Task[]>([]);
   const [pending, setPending] = React.useState<Employee[]>([]);
   const [activity, setActivity] = React.useState<ActivityLog[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
   const [unavailable, setUnavailable] = React.useState(false);
   const [reloadKey, setReloadKey] = React.useState(0);
+
+  const [days, setDays] = React.useState<number>(DEFAULT_RANGE);
+  // Keyed by the slice it was fetched for, so "is this stale?" is derived rather
+  // than tracked — and the previous render stays on screen while the next loads.
+  const [trendSlice, setTrendSlice] = React.useState<{
+    days: number;
+    key: number;
+    points: TrendPoint[];
+  } | null>(null);
+
+  const trend = trendSlice?.points ?? [];
+  const trendBusy =
+    trendSlice === null ||
+    trendSlice.days !== days ||
+    trendSlice.key !== reloadKey;
 
   React.useEffect(() => {
     const signal = { cancelled: false };
 
     const load = async () => {
       try {
-        const [head, projects, tasksTrend, latest, pendingList, logs] =
-          await Promise.all([
-            getAnalyticsOverview(),
-            getProjectAnalytics({ limit: 20 }).catch(() => null),
-            getTaskAnalytics({ days: TREND_DAYS }).catch(() => null),
-            listTasks({ limit: 6, sortBy: "createdAt", sortOrder: "desc" }).catch(
-              () => null,
-            ),
-            listPendingEmployees().catch(() => null),
-            listRecentActivity({ limit: 8 }).catch(() => null),
-          ]);
+        const [head, projects, latest, pendingList, logs] = await Promise.all([
+          getAnalyticsOverview(),
+          getProjectAnalytics({ limit: 20 }).catch(() => null),
+          listTasks({
+            limit: 6,
+            sortBy: "createdAt",
+            sortOrder: "desc",
+          }).catch(() => null),
+          listPendingEmployees().catch(() => null),
+          listRecentActivity({ limit: 8 }).catch(() => null),
+        ]);
         if (signal.cancelled) return;
 
         setOverview(head.data);
         setProjectRows(projects?.data.projects ?? []);
-        setTrend(tasksTrend?.data.trend ?? []);
         setRecentTasks(latest ? toTasks(latest.items) : []);
         setPending(pendingList ? toEmployees(pendingList.items) : []);
         setActivity(logs ? toActivityLogs(logs.items) : []);
@@ -108,7 +144,10 @@ export default function DashboardClient() {
         console.error("Failed to load the dashboard:", error);
         setUnavailable(true);
       } finally {
-        if (!signal.cancelled) setLoading(false);
+        if (!signal.cancelled) {
+          setLoading(false);
+          setBusy(false);
+        }
       }
     };
 
@@ -118,8 +157,28 @@ export default function DashboardClient() {
     };
   }, [reloadKey]);
 
+  // The range control only rescopes the trend, so it refetches on its own — the
+  // rest of the page never flashes back to a skeleton.
+  React.useEffect(() => {
+    const signal = { cancelled: false };
+
+    getTaskAnalytics({ days })
+      .then((res) => {
+        if (!signal.cancelled)
+          setTrendSlice({ days, key: reloadKey, points: res.data.trend ?? [] });
+      })
+      .catch(() => {
+        if (!signal.cancelled)
+          setTrendSlice({ days, key: reloadKey, points: [] });
+      });
+
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [days, reloadKey]);
+
   const refresh = () => {
-    setLoading(true);
+    setBusy(true);
     setReloadKey((key) => key + 1);
   };
 
@@ -142,9 +201,63 @@ export default function DashboardClient() {
   }
 
   const { employees, projects: projectCounts, tasks } = overview;
+
   const openProjects = projectRows.filter(
     (row) => row.status !== "archived" && row.status !== "completed",
   );
+
+  const trendData: TrendDatum[] = trend.map((point) => ({
+    label: formatShortDate(point.date),
+    created: point.created,
+    completed: point.completed,
+  }));
+
+  const statusBars: CategoryDatum[] = (
+    [
+      ["To Do", tasks.pending],
+      ["In Progress", tasks.inProgress],
+      ["Pending Approval", tasks.pendingApproval],
+      ["Returned", tasks.returned],
+      ["Blocked", tasks.blocked],
+      ["Completed", tasks.completed],
+    ] as const
+  ).map(([label, value]) => ({
+    label,
+    value,
+    color: TASK_STATUS_COLOR[label],
+    note: tasks.totalTasks
+      ? `${Math.round((value / tasks.totalTasks) * 100)}% of all tasks`
+      : undefined,
+  }));
+
+  const roleBars: CategoryDatum[] = [
+    { label: "Managers", value: employees.managers },
+    { label: "Team Leads", value: employees.teamLeads },
+    { label: "Team Members", value: employees.teamMembers },
+  ].map((row) => ({
+    ...row,
+    color: "var(--viz-1)",
+    note: employees.totalEmployees
+      ? `${Math.round((row.value / employees.totalEmployees) * 100)}% of headcount`
+      : undefined,
+  }));
+
+  const priorityBars = toPriorityBars(tasks.byPriority);
+
+  const projectBars: ProjectBarDatum[] = openProjects
+    .slice()
+    .sort((a, b) => b.totalTasks - a.totalTasks)
+    .slice(0, PROJECT_BARS)
+    .map((project) => ({
+      name: project.name,
+      completed: project.completedTasks,
+      // Overdue is a subset of what's left — subtract it so the stack still
+      // adds up to the project's total instead of double-counting.
+      onTrack: Math.max(0, project.remainingTasks - project.overdueTasks),
+      overdue: project.overdueTasks,
+      total: project.totalTasks,
+      percentage: project.completionPercentage,
+    }));
 
   const actionItems = [
     {
@@ -152,23 +265,35 @@ export default function DashboardClient() {
       label: "employees waiting for approval",
       href: "/dashboard/requests",
       cta: "Review requests",
+      icon: UserPlus,
+      color: "var(--viz-warning)",
     },
     {
       count: tasks.pendingApproval,
       label: "tasks waiting for your decision",
       href: "/dashboard/approvals",
-      cta: "Open approval center",
+      cta: "Approval center",
+      icon: CheckCircle2,
+      color: "var(--viz-serious)",
     },
     {
       count: tasks.overdue,
       label: "tasks past their due date",
       href: "/dashboard/tasks?status=overdue",
-      cta: "View overdue tasks",
+      cta: "Overdue tasks",
+      icon: AlertTriangle,
+      color: "var(--viz-critical)",
     },
   ].filter((item) => item.count > 0);
 
   return (
-    <>
+    <div
+      className={cn(
+        "space-y-6 transition-opacity duration-200",
+        busy && "opacity-60",
+      )}
+      aria-busy={busy}
+    >
       <PageHeader
         title="Dashboard"
         description={
@@ -181,7 +306,11 @@ export default function DashboardClient() {
             <Button variant="outline" size="sm" asChild>
               <Link href="/dashboard/reports">Generate report</Link>
             </Button>
-            <Button size="sm" className="bg-[#2d5a4c] hover:bg-[#234539]" asChild>
+            <Button
+              size="sm"
+              className="bg-[#2d5a4c] hover:bg-[#234539]"
+              asChild
+            >
               <Link href="/dashboard/projects">New project</Link>
             </Button>
           </>
@@ -191,17 +320,30 @@ export default function DashboardClient() {
       {actionItems.length > 0 && (
         <div className="grid gap-3 md:grid-cols-3">
           {actionItems.map((item) => (
-            <Card key={item.href} className="border-l-4 border-l-[#2d5a4c]">
-              <CardContent className="flex items-center justify-between gap-3 py-3">
-                <p className="text-sm">
-                  <span className="text-lg font-bold">{item.count}</span>{" "}
-                  <span className="text-muted-foreground">{item.label}</span>
-                </p>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href={item.href}>{item.cta} →</Link>
-                </Button>
-              </CardContent>
-            </Card>
+            <Link key={item.href} href={item.href} className="group block">
+              <Card className="h-full gap-0 transition-colors group-hover:border-foreground/20">
+                <CardContent className="flex items-center gap-3 py-1">
+                  <span
+                    aria-hidden
+                    className="grid size-9 shrink-0 place-items-center rounded-lg"
+                    style={{
+                      background: `color-mix(in oklch, ${item.color} 14%, transparent)`,
+                      color: item.color,
+                    }}
+                  >
+                    <item.icon className="size-4.5" />
+                  </span>
+                  <p className="min-w-0 text-sm">
+                    <span className="text-lg font-bold">{item.count}</span>{" "}
+                    <span className="text-muted-foreground">{item.label}</span>
+                  </p>
+                  <span className="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground group-hover:text-foreground">
+                    {item.cta}
+                    <ArrowRight className="size-3.5" />
+                  </span>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
       )}
@@ -213,6 +355,11 @@ export default function DashboardClient() {
           hint={`${employees.activeEmployees} active · ${employees.pendingEmployees} pending`}
           icon={Users}
           href="/dashboard/employees"
+          progress={{
+            value: employees.activeEmployees,
+            max: employees.totalEmployees,
+            caption: `${share(employees.activeEmployees, employees.totalEmployees)} of headcount active`,
+          }}
         />
         <StatTile
           label="Projects"
@@ -221,6 +368,11 @@ export default function DashboardClient() {
           icon={FolderKanban}
           accent="var(--viz-3)"
           href="/dashboard/projects"
+          progress={{
+            value: projectCounts.completedProjects,
+            max: projectCounts.totalProjects,
+            caption: `${share(projectCounts.completedProjects, projectCounts.totalProjects)} delivered`,
+          }}
         />
         <StatTile
           label="Total Tasks"
@@ -229,6 +381,11 @@ export default function DashboardClient() {
           icon={ClipboardList}
           accent="var(--viz-2)"
           href="/dashboard/tasks"
+          progress={{
+            value: tasks.completed,
+            max: tasks.totalTasks,
+            caption: `${share(tasks.completed, tasks.totalTasks)} completed`,
+          }}
         />
         <StatTile
           label="Overdue Tasks"
@@ -237,81 +394,139 @@ export default function DashboardClient() {
           icon={AlertTriangle}
           accent="var(--viz-critical)"
           href="/dashboard/tasks?status=overdue"
+          progress={{
+            value: tasks.overdue,
+            max: tasks.totalTasks,
+            caption: `${share(tasks.overdue, tasks.totalTasks)} of all tasks are late`,
+          }}
         />
       </StatGrid>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+      <FilterBar
+        days={days}
+        onChange={setDays}
+        onRefresh={refresh}
+        busy={busy || trendBusy}
+      />
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Organization overview</CardTitle>
+            <CardTitle>Tasks created vs completed</CardTitle>
             <CardDescription>
-              Headcount by role across {employees.activeEmployees} active
-              employees.
+              Daily volume over the last {days} days.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <HBarChart
-              tableColumns={["Role", "People"]}
-              data={[
-                { label: "Team Members", value: employees.teamMembers },
-                { label: "Team Leads", value: employees.teamLeads },
-                { label: "Managers", value: employees.managers },
-              ]}
-            />
+            {trendSlice === null ? (
+              <Skeleton className="h-80 w-full" />
+            ) : (
+              <div
+                className={cn(
+                  "transition-opacity duration-200",
+                  trendBusy && "opacity-60",
+                )}
+              >
+                <TrendAreaChart data={trendData} />
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Task status distribution</CardTitle>
+            <CardTitle>Completion rate</CardTitle>
             <CardDescription>
-              All {tasks.totalTasks} tasks in the organization.
+              Share of all tasks that are finished.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <StackedBar
-              segments={[
-                { label: "To Do", value: tasks.pending },
-                { label: "In Progress", value: tasks.inProgress },
-                { label: "Pending Approval", value: tasks.pendingApproval },
-                { label: "Returned", value: tasks.returned },
-                { label: "Blocked", value: tasks.blocked },
-                { label: "Completed", value: tasks.completed },
-              ]}
+            <CompletionGauge
+              percentage={tasks.completionRate}
+              caption={`${tasks.completed.toLocaleString()} of ${tasks.totalTasks.toLocaleString()} tasks`}
             />
+            <dl className="mt-4 grid grid-cols-2 gap-3 border-t pt-4">
+              <MiniStat
+                label="In progress"
+                value={tasks.inProgress}
+                color="var(--viz-1)"
+              />
+              <MiniStat
+                label="Blocked"
+                value={tasks.blocked}
+                color="var(--viz-serious)"
+              />
+            </dl>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Tasks created vs completed</CardTitle>
-          <CardDescription>
-            Daily volume over the last {TREND_DAYS} days.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {trend.length === 0 ? (
-            <EmptyState title="No trend data yet" />
-          ) : (
-            <LineChart
-              categories={trend.map((p) => formatShortDate(p.date))}
-              series={[
-                { label: "Created", values: trend.map((p) => p.created) },
-                { label: "Completed", values: trend.map((p) => p.completed) },
-              ]}
+      <div
+        className={cn(
+          "grid gap-6",
+          priorityBars.length ? "lg:grid-cols-3" : "lg:grid-cols-2",
+        )}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>Task status distribution</CardTitle>
+            <CardDescription>
+              All {tasks.totalTasks.toLocaleString()} tasks in the organization.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CategoryBarChart
+              data={statusBars}
+              ariaLabel="Number of tasks in each status"
+              labelWidth={124}
+              tableColumns={["Status", "Tasks"]}
             />
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Headcount by role</CardTitle>
+            <CardDescription>
+              {employees.activeEmployees.toLocaleString()} active employees.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CategoryBarChart
+              data={roleBars}
+              ariaLabel="Number of employees in each role"
+              labelWidth={110}
+              tableColumns={["Role", "People"]}
+            />
+          </CardContent>
+        </Card>
+
+        {priorityBars.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Tasks by priority</CardTitle>
+              <CardDescription>Where the urgent work sits.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CategoryBarChart
+                data={priorityBars}
+                ariaLabel="Number of tasks at each priority"
+                labelWidth={80}
+                tableColumns={["Priority", "Tasks"]}
+              />
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <CardTitle>Project progress</CardTitle>
               <CardDescription>
-                Completion across projects that are still running.
+                Task load across the {projectBars.length} busiest running
+                projects.
               </CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
@@ -320,55 +535,7 @@ export default function DashboardClient() {
           </div>
         </CardHeader>
         <CardContent>
-          {openProjects.length === 0 ? (
-            <EmptyState title="No active projects" />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Progress</TableHead>
-                    <TableHead className="text-right">Completed</TableHead>
-                    <TableHead className="text-right">Remaining</TableHead>
-                    <TableHead className="text-right">Overdue</TableHead>
-                    <TableHead className="text-right">Due</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {openProjects.map((project) => (
-                    <TableRow key={project.projectId}>
-                      <TableCell>
-                        <Link
-                          href={`/dashboard/projects/${project.projectId}`}
-                          className="font-medium hover:underline"
-                        >
-                          {project.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <ProgressCell
-                          value={Math.round(project.completionPercentage)}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {project.completedTasks}/{project.totalTasks}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {project.remainingTasks}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {project.overdueTasks}
-                      </TableCell>
-                      <TableCell className="text-right text-xs whitespace-nowrap">
-                        {formatDate(project.endDate?.slice(0, 10))}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <ProjectStackedBars data={projectBars} />
         </CardContent>
       </Card>
 
@@ -398,53 +565,53 @@ export default function DashboardClient() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentTasks.map((task) => (
-                      <TableRow key={task.id}>
-                        <TableCell className="max-w-[16rem]">
-                          <Link
-                            href={`/dashboard/tasks/${task.id}`}
-                            className="block truncate font-medium hover:underline"
-                          >
-                            {task.title}
-                          </Link>
-                          <span className="text-xs text-muted-foreground">
-                            {task.projectName ?? "—"}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <TaskStatusBadge status={task.status} />
-                        </TableCell>
-                        <TableCell>
-                          <PriorityBadge priority={task.priority} />
-                        </TableCell>
-                        <TableCell>
-                          {task.assigneeId ? (
-                            <PersonCell
-                              employee={{
-                                id: task.assigneeId,
-                                name:
-                                  task.people?.find(
-                                    (p) => p.id === task.assigneeId,
-                                  )?.name ?? "Unknown",
-                                email: "",
-                                avatarColor:
-                                  task.people?.find(
-                                    (p) => p.id === task.assigneeId,
-                                  )?.avatarColor ?? "#2d5a4c",
-                              }}
-                              href={`/dashboard/employees/${task.assigneeId}`}
-                            />
-                          ) : (
+                    {recentTasks.map((task) => {
+                      const assignee = task.people?.find(
+                        (person) => person.id === task.assigneeId,
+                      );
+                      return (
+                        <TableRow key={task.id}>
+                          <TableCell className="max-w-[16rem]">
+                            <Link
+                              href={`/dashboard/tasks/${task.id}`}
+                              className="block truncate font-medium hover:underline"
+                            >
+                              {task.title}
+                            </Link>
                             <span className="text-xs text-muted-foreground">
-                              Unassigned
+                              {task.projectName ?? "—"}
                             </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right text-xs whitespace-nowrap">
-                          {formatDate(task.dueDate)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell>
+                            <TaskStatusBadge status={task.status} />
+                          </TableCell>
+                          <TableCell>
+                            <PriorityBadge priority={task.priority} />
+                          </TableCell>
+                          <TableCell>
+                            {task.assigneeId ? (
+                              <PersonCell
+                                employee={{
+                                  id: task.assigneeId,
+                                  name: assignee?.name ?? "Unknown",
+                                  email: "",
+                                  avatarColor:
+                                    assignee?.avatarColor ?? "#2d5a4c",
+                                }}
+                                href={`/dashboard/employees/${task.assigneeId}`}
+                              />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                Unassigned
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right text-xs whitespace-nowrap">
+                            {formatDate(task.dueDate)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -457,7 +624,7 @@ export default function DashboardClient() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  <UserPlus className="size-4" />
+                  <UserPlus className="size-4 text-muted-foreground" />
                   Pending requests
                 </CardTitle>
                 <Button variant="ghost" size="sm" asChild>
@@ -467,7 +634,8 @@ export default function DashboardClient() {
             </CardHeader>
             <CardContent className="space-y-3">
               {pending.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Inbox className="size-4" />
                   No pending registrations.
                 </p>
               ) : (
@@ -494,7 +662,10 @@ export default function DashboardClient() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Recent activity</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="size-4 text-muted-foreground" />
+                  Recent activity
+                </CardTitle>
                 <Button variant="ghost" size="sm" asChild>
                   <Link href="/dashboard/activity">All</Link>
                 </Button>
@@ -506,14 +677,17 @@ export default function DashboardClient() {
                   No activity recorded yet.
                 </p>
               ) : (
-                <ul className="space-y-3">
+                <ul className="space-y-3.5">
                   {activity.map((log) => (
-                    <li key={log.id} className="text-xs">
+                    <li
+                      key={log.id}
+                      className="relative pl-4 text-xs before:absolute before:top-1.5 before:left-0 before:size-1.5 before:rounded-full before:bg-(--viz-1) after:absolute after:top-4 after:bottom-[-0.7rem] after:left-[0.16rem] after:w-px after:bg-border last:after:hidden"
+                    >
                       <span className="font-medium">{log.actor}</span>{" "}
                       <span className="text-muted-foreground">
                         {log.message}
                       </span>
-                      <span className="block text-[0.65rem] text-muted-foreground">
+                      <span className="mt-0.5 block text-[0.65rem] text-muted-foreground">
                         {formatDateTime(log.at)}
                       </span>
                     </li>
@@ -524,8 +698,108 @@ export default function DashboardClient() {
           </Card>
         </div>
       </div>
-    </>
+    </div>
   );
+}
+
+/** One filter row above everything it scopes — never a control inside a chart card. */
+function FilterBar({
+  days,
+  onChange,
+  onRefresh,
+  busy,
+}: {
+  days: number;
+  onChange: (days: number) => void;
+  onRefresh: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-card px-3 py-2 ring-1 ring-foreground/10">
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-medium text-muted-foreground">
+          Time range
+        </span>
+        <div
+          role="group"
+          aria-label="Trend time range"
+          className="flex gap-0.5 rounded-lg bg-muted p-0.5"
+        >
+          {RANGES.map((range) => (
+            <button
+              key={range}
+              type="button"
+              aria-pressed={days === range}
+              onClick={() => onChange(range)}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                days === range
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {range} days
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Button variant="ghost" size="sm" onClick={onRefresh} disabled={busy}>
+        <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
+        Refresh
+      </Button>
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div>
+      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span
+          aria-hidden
+          className="size-2 shrink-0 rounded-[2px]"
+          style={{ background: color }}
+        />
+        {label}
+      </dt>
+      <dd className="mt-0.5 text-lg font-semibold">{value.toLocaleString()}</dd>
+    </div>
+  );
+}
+
+function share(value: number, total: number): string {
+  if (!total) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
+}
+
+const PRIORITY_ORDER: Priority[] = ["Urgent", "High", "Medium", "Low"];
+
+function toPriorityBars(
+  byPriority: Record<string, number> | undefined,
+): CategoryDatum[] {
+  if (!byPriority) return [];
+
+  const normalized = new Map<string, number>();
+  for (const [key, count] of Object.entries(byPriority)) {
+    normalized.set(key.toLowerCase(), count);
+  }
+
+  const bars = PRIORITY_ORDER.map((priority) => ({
+    label: priority,
+    value: normalized.get(priority.toLowerCase()) ?? 0,
+    color: PRIORITY_COLOR[priority],
+  })).filter((bar) => bar.value > 0);
+
+  return bars.length ? bars : [];
 }
 
 function DashboardSkeleton() {
@@ -533,10 +807,15 @@ function DashboardSkeleton() {
     <div className="space-y-6">
       <Skeleton className="h-10 w-64" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+      <Skeleton className="h-11 w-full" />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Skeleton className="h-96 w-full lg:col-span-2" />
+        <Skeleton className="h-96 w-full" />
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
         <Skeleton className="h-64 w-full" />

@@ -224,14 +224,21 @@ export function Meter({
   label,
   className,
   color = "var(--viz-1)",
+  track,
+  size = "md",
 }: {
   value: number;
   max?: number;
   label?: string;
   className?: string;
   color?: string;
+  /** Defaults to a light step of the fill's own hue, so state reads across the bar. */
+  track?: string;
+  size?: "sm" | "md";
 }) {
   const pct = Math.min(Math.round((value / max) * 100), 100);
+  const trackColor =
+    track ?? `color-mix(in oklch, ${color} 16%, var(--viz-track))`;
 
   return (
     <div className={cn("w-full", className)}>
@@ -242,8 +249,11 @@ export function Meter({
         </div>
       )}
       <div
-        className="h-2 w-full overflow-hidden rounded-full"
-        style={{ background: "var(--viz-track)" }}
+        className={cn(
+          "w-full overflow-hidden rounded-full",
+          size === "sm" ? "h-1.5" : "h-2",
+        )}
+        style={{ background: trackColor }}
         role="meter"
         aria-valuenow={pct}
         aria-valuemin={0}
